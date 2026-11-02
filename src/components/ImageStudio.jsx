@@ -114,10 +114,11 @@ export default function ImageStudio({
     onAddToast && onAddToast(`已应用「${scene.name}」电商高光场景`);
   };
 
-  // 调用 Hono 后端 (通义万相) 将 2D 贴花图转化为高奢商拍照
-  const handleDecalSceneGenerate = async ({ baseImageDataUrl, mold, craft }) => {
+  // 调用 Hono 后端 (阿里云百炼 Qwen-Image-3.0) 将 2D 贴花图转化为 2K 高奢商拍照
+  const handleDecalSceneGenerate = async ({ baseImageDataUrl, mold, craft, scenePrompt }) => {
     setIsGenerating(true);
-    onAddToast && onAddToast(`⚡ 正在调用通义万相，为「${mold.name}」融合高奢光影与背景...`);
+    const finalPrompt = `${mold.name}（${craft.name}企业Logo定制），${scenePrompt || '高奢胡桃木极简展台，高级轮廓光，柔和阴影，4k画质'}`;
+    onAddToast && onAddToast(`⚡ 正在调用阿里云百炼 Qwen-Image-3.0 渲染真实 2K 商拍大图 (约 8~12 秒)...`);
 
     try {
       const res = await fetch('http://localhost:3001/api/generate-scene', {
@@ -125,54 +126,48 @@ export default function ImageStudio({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           baseImageUrl: baseImageDataUrl,
-          prompt: `${mold.name}，企业定制Logo，${craft.name}工艺，放在高奢胡桃木极简展台，高级轮廓光，柔和阴影，4k画质`,
-          n: 4,
+          prompt: finalPrompt,
+          n: 2,
           noiseLevel: 300
         })
       });
 
       const result = await res.json();
       if (result.code === 0 && result.data?.images?.length) {
+        const aiUrls = result.data.images;
         const newBatch = {
           id: `batch-wanx-${Date.now()}`,
-          prompt: `${mold.name}（${craft.name}定制）：高奢胡桃木场景光影置换，Logo 100% 绝对保真`,
-          model: '通义万相 2.0 (百炼)',
-          ratio: '3:4',
+          prompt: finalPrompt,
+          model: 'Qwen-Image-3.0 (阿里百炼 2K 直出)',
+          ratio: '1:1',
           time: '刚刚',
-          customImageUrl: result.data.images[0],
-          items: result.data.images.map((url, i) => ({
-            id: `wanx-${Date.now()}-${i}`,
-            customImageUrl: url,
-            tag: i === 0 ? '最佳光影' : `光影方案 ${i + 1}`,
-            palette: 'cream'
-          }))
+          decalCutoutUrl: baseImageDataUrl,
+          customImageUrl: aiUrls[0],
+          items: [
+            ...aiUrls.map((url, i) => ({
+              id: `wanx-${Date.now()}-${i}`,
+              customImageUrl: url,
+              isFullScene: true,
+              tag: i === 0 ? '百炼 2K 主视觉' : `百炼 2K 侧逆光`,
+              palette: 'cream'
+            })),
+            {
+              id: `wanx-cutout-${Date.now()}`,
+              customImageUrl: baseImageDataUrl,
+              isFullScene: false,
+              tag: '2D 贴花刀版原图 (对比)',
+              palette: 'glacier'
+            }
+          ]
         };
         setBatches((prev) => [newBatch, ...prev]);
-        setActiveTab('stream'); // 切换到画廊查看出图
-        onAddToast && onAddToast('🎉 阿里云通义万相 4 组高奢商拍大图已生成！');
+        onAddToast && onAddToast('🎉 阿里云百炼 Qwen-Image-3.0 真实 2K 商拍大图已生成！');
       } else {
         throw new Error(result.message || '生成失败');
       }
     } catch (err) {
-      console.warn('API调用提示/降级模拟:', err.message);
-      // 离线优雅降级预览
-      const mockBatch = {
-        id: `batch-${Date.now()}`,
-        prompt: `${mold.name}（${craft.name}定制）：高奢胡桃木桌面光影仿真`,
-        model: '通义万相 (离线仿真)',
-        ratio: '3:4',
-        time: '刚刚',
-        customImageUrl: baseImageDataUrl,
-        items: [
-          { id: `g-${Date.now()}-1`, palette: 'cream', tag: '胡桃木光影' },
-          { id: `g-${Date.now()}-2`, palette: 'glacier', tag: '极简科技' },
-          { id: `g-${Date.now()}-3`, palette: 'lavender', tag: '柔光高奢' },
-          { id: `g-${Date.now()}-4`, palette: 'botanical', tag: '自然漫射' }
-        ]
-      };
-      setBatches((prev) => [mockBatch, ...prev]);
-      setActiveTab('stream');
-      onAddToast && onAddToast('已生成 4 组光影模拟渲染 (未连接后端时自动启用本地仿真)');
+      console.error('百炼生图请求错误:', err);
+      onAddToast && onAddToast(`⚠️ 生图请求异常: ${err.message}`);
     } finally {
       setIsGenerating(false);
     }
@@ -271,13 +266,21 @@ export default function ImageStudio({
                     onClick={() => setActiveDetailImage({ ...img, prompt: batches[0].prompt, ratio: batches[0].ratio })}
                     className="group relative aspect-[3/4] rounded-2xl overflow-hidden bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition cursor-pointer"
                   >
-                    <ProductArtwork
-                      svgType={batches[0].svgType}
-                      customImageUrl={img.customImageUrl || batches[0].customImageUrl}
-                      palette={img.palette}
-                      isCutout={false}
-                      className="w-full h-full"
-                    />
+                    {img.isFullScene && img.customImageUrl ? (
+                      <img
+                        src={img.customImageUrl}
+                        alt={img.tag}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <ProductArtwork
+                        svgType={batches[0].svgType}
+                        customImageUrl={img.customImageUrl || batches[0].customImageUrl}
+                        palette={img.palette}
+                        isCutout={false}
+                        className="w-full h-full"
+                      />
+                    )}
                     <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-medium backdrop-blur-sm">
                       {img.tag}
                     </div>
@@ -335,14 +338,22 @@ export default function ImageStudio({
                     onClick={() => setActiveDetailImage(fullItemData)}
                     className={`group relative ${getCardAspect(batch.ratio)} rounded-2xl overflow-hidden bg-white border border-slate-200/80 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.08)] transition-all cursor-pointer`}
                   >
-                    <ProductArtwork
-                      svgType={batch.svgType}
-                      customImageUrl={batch.customImageUrl}
-                      palette={img.palette}
-                      isCutout={isCutout}
-                      badge={isCutout ? '白底原图' : ''}
-                      className="w-full h-full"
-                    />
+                    {img.isFullScene && img.customImageUrl && !isCutout ? (
+                      <img
+                        src={img.customImageUrl}
+                        alt={img.tag}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <ProductArtwork
+                        svgType={batch.svgType}
+                        customImageUrl={isCutout ? (batch.decalCutoutUrl || batch.customImageUrl) : (img.customImageUrl || batch.customImageUrl)}
+                        palette={img.palette}
+                        isCutout={isCutout}
+                        badge={isCutout ? '白底原图' : ''}
+                        className="w-full h-full"
+                      />
+                    )}
 
                     {/* Top Right Zoom Pill */}
                     <div className="absolute top-2.5 right-2.5 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
