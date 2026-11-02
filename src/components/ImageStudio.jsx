@@ -15,6 +15,7 @@ import {
 import { PRODUCTS, IMAGE_FEED, VIRAL_INSPIRATIONS } from '../data/mockData';
 import ProductArtwork from './ProductArtwork';
 import ImageDetailModal from './ImageDetailModal';
+import CustomDecalCanvas from './CustomDecalCanvas';
 
 const ECOMMERCE_SCENES = [
   {
@@ -56,6 +57,7 @@ export default function ImageStudio({
   onSendToVideo,
   onAddToast
 }) {
+  const [activeTab, setActiveTab] = useState('decal'); // 'decal' | 'stream'
   const [batches, setBatches] = useState(IMAGE_FEED);
   const [prompt, setPrompt] = useState(selectedProduct.prompt);
   const [ratio, setRatio] = useState('3:4');
@@ -112,6 +114,70 @@ export default function ImageStudio({
     onAddToast && onAddToast(`已应用「${scene.name}」电商高光场景`);
   };
 
+  // 调用 Hono 后端 (通义万相) 将 2D 贴花图转化为高奢商拍照
+  const handleDecalSceneGenerate = async ({ baseImageDataUrl, mold, craft }) => {
+    setIsGenerating(true);
+    onAddToast && onAddToast(`⚡ 正在调用通义万相，为「${mold.name}」融合高奢光影与背景...`);
+
+    try {
+      const res = await fetch('http://localhost:3001/api/generate-scene', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseImageUrl: baseImageDataUrl,
+          prompt: `${mold.name}，企业定制Logo，${craft.name}工艺，放在高奢胡桃木极简展台，高级轮廓光，柔和阴影，4k画质`,
+          n: 4,
+          noiseLevel: 300
+        })
+      });
+
+      const result = await res.json();
+      if (result.code === 0 && result.data?.images?.length) {
+        const newBatch = {
+          id: `batch-wanx-${Date.now()}`,
+          prompt: `${mold.name}（${craft.name}定制）：高奢胡桃木场景光影置换，Logo 100% 绝对保真`,
+          model: '通义万相 2.0 (百炼)',
+          ratio: '3:4',
+          time: '刚刚',
+          customImageUrl: result.data.images[0],
+          items: result.data.images.map((url, i) => ({
+            id: `wanx-${Date.now()}-${i}`,
+            customImageUrl: url,
+            tag: i === 0 ? '最佳光影' : `光影方案 ${i + 1}`,
+            palette: 'cream'
+          }))
+        };
+        setBatches((prev) => [newBatch, ...prev]);
+        setActiveTab('stream'); // 切换到画廊查看出图
+        onAddToast && onAddToast('🎉 阿里云通义万相 4 组高奢商拍大图已生成！');
+      } else {
+        throw new Error(result.message || '生成失败');
+      }
+    } catch (err) {
+      console.warn('API调用提示/降级模拟:', err.message);
+      // 离线优雅降级预览
+      const mockBatch = {
+        id: `batch-${Date.now()}`,
+        prompt: `${mold.name}（${craft.name}定制）：高奢胡桃木桌面光影仿真`,
+        model: '通义万相 (离线仿真)',
+        ratio: '3:4',
+        time: '刚刚',
+        customImageUrl: baseImageDataUrl,
+        items: [
+          { id: `g-${Date.now()}-1`, palette: 'cream', tag: '胡桃木光影' },
+          { id: `g-${Date.now()}-2`, palette: 'glacier', tag: '极简科技' },
+          { id: `g-${Date.now()}-3`, palette: 'lavender', tag: '柔光高奢' },
+          { id: `g-${Date.now()}-4`, palette: 'botanical', tag: '自然漫射' }
+        ]
+      };
+      setBatches((prev) => [mockBatch, ...prev]);
+      setActiveTab('stream');
+      onAddToast && onAddToast('已生成 4 组光影模拟渲染 (未连接后端时自动启用本地仿真)');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleGenerate = () => {
     if (!prompt.trim()) return;
     setIsGenerating(true);
@@ -138,10 +204,95 @@ export default function ImageStudio({
   };
 
   return (
-    <div className="relative min-h-full pb-52 space-y-8">
-      {/* Generated Batches Stream */}
-      <div className="space-y-8">
-        {batches.map((batch) => (
+    <div className="relative min-h-full pb-52 space-y-6">
+      {/* 顶部模式切换 Tab */}
+      <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('decal')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              activeTab === 'decal'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+            3C 科技礼品 2D 贴花定制 (Fabric.js 引擎)
+          </button>
+          <button
+            onClick={() => setActiveTab('stream')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+              activeTab === 'stream'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
+            }`}
+          >
+            <Palette className="w-3.5 h-3.5 text-indigo-400" />
+            商拍生成画廊 ({batches.length})
+          </button>
+        </div>
+
+        {activeTab === 'decal' && (
+          <div className="text-xs text-slate-500 hidden sm:flex items-center gap-1.5 font-medium">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            纯 2D 矢量安全区裁剪 + 工艺仿真已就绪
+          </div>
+        )}
+      </div>
+
+      {/* Tab 1: 2D 贴花与工艺仿真画板 */}
+      {activeTab === 'decal' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <CustomDecalCanvas
+            onGenerateScene={handleDecalSceneGenerate}
+            isGenerating={isGenerating}
+          />
+
+          {/* 贴花画板下方的最近一次通义万相生成预览 */}
+          {batches.length > 0 && (
+            <div className="pt-4 border-t border-slate-200/80">
+              <div className="flex items-center justify-between mb-3 px-1">
+                <span className="text-xs font-bold text-slate-800 tracking-wider uppercase flex items-center gap-1.5">
+                  <Flame className="w-3.5 h-3.5 text-amber-500" /> 最新商拍方案直出
+                </span>
+                <button
+                  onClick={() => setActiveTab('stream')}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
+                >
+                  查看全部画廊 →
+                </button>
+              </div>
+
+              {/* 展示首个 batch 的 4 宫格 */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+                {batches[0].items.map((img) => (
+                  <div
+                    key={img.id}
+                    onClick={() => setActiveDetailImage({ ...img, prompt: batches[0].prompt, ratio: batches[0].ratio })}
+                    className="group relative aspect-[3/4] rounded-2xl overflow-hidden bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition cursor-pointer"
+                  >
+                    <ProductArtwork
+                      svgType={batches[0].svgType}
+                      customImageUrl={img.customImageUrl || batches[0].customImageUrl}
+                      palette={img.palette}
+                      isCutout={false}
+                      className="w-full h-full"
+                    />
+                    <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-medium backdrop-blur-sm">
+                      {img.tag}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab 2: 完整生成的商拍画廊列表 */}
+      {activeTab === 'stream' && (
+        <div className="space-y-8 animate-in fade-in duration-300">
+          {batches.map((batch) => (
           <div key={batch.id} className="space-y-3">
             {/* Minimal Prompt Header Line */}
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
@@ -249,6 +400,7 @@ export default function ImageStudio({
           </div>
         ))}
       </div>
+      )}
 
       {/* Floating Bottom Omnibox with E-Commerce Scene Quick Bar */}
       <div className="fixed bottom-5 left-[196px] right-4 z-30 flex flex-col items-center pointer-events-none gap-2">
