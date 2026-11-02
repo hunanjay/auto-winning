@@ -22,6 +22,7 @@
 - **前端框架**：React 19 (`react`, `react-dom`)
 - **构建工具**：Vite 8 (`@vitejs/plugin-react`)
 - **样式引擎**：Tailwind CSS v4 (`@tailwindcss/vite`)
+- **2D 贴花与礼品定制引擎**：`Fabric.js` / `Konva.js` + HTML5 Canvas Blend Modes / SVG Filter（聚焦充电宝、机械键盘等 3C 科技礼品的 2D Print Area 裁剪、自由缩放旋转、磁吸对齐与镭雕/UV浮雕工艺渲染，**明确暂不引入 3D 方案**）
 - **图标库**：`lucide-react`
 
 ### 目录结构
