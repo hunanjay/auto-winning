@@ -402,7 +402,8 @@ export default function ImageStudio({
       </div>
       )}
 
-      {/* Floating Bottom Omnibox with E-Commerce Scene Quick Bar */}
+      {/* Floating Bottom Omnibox with E-Commerce Scene Quick Bar (only in stream gallery mode) */}
+      {activeTab === 'stream' && (
       <div className="fixed bottom-5 left-[196px] right-4 z-30 flex flex-col items-center pointer-events-none gap-2">
         {/* Top Quick Scene Presets Pill Bar for E-Commerce Sellers */}
         <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-full px-3 py-1.5 shadow-md flex items-center gap-1.5 pointer-events-auto overflow-x-auto max-w-4xl">
@@ -624,6 +625,7 @@ export default function ImageStudio({
           </div>
         </div>
       </div>
+      )}
 
       {/* Image Detail & Before/After Slider Modal */}
       <ImageDetailModal
