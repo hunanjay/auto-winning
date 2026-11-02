@@ -60,10 +60,15 @@
 # 1. 安装依赖
 npm install
 
-# 2. 启动本地开发服务器 (http://localhost:5173/)
+# 2. (可选) 配置 Clerk 认证 Publishable Key
+cp .env.example .env.local
+# 将 .env.local 中的 VITE_CLERK_PUBLISHABLE_KEY 替换为你的 pk_test_... Key
+# 若未配置，系统默认启用内置的 1:1 Clerk 交互沙盒注册/登录弹窗（亦可在弹窗底部随时粘贴 Key 切换）
+
+# 3. 启动本地开发服务器 (http://localhost:5173/)
 npm run dev
 
-# 3. 生产环境构建
+# 4. 生产环境构建
 npm run build
 ```
 
@@ -72,6 +77,7 @@ npm run build
 ## 🛠️ 技术栈
 
 - **框架**：React 19 + Vite 8
+- **身份认证与用户体系**：[Clerk](https://clerk.com/) (`@clerk/clerk-react`，支持 `<ClerkProvider>`、邮箱验证码注册、GitHub/Google OAuth 与内置零配置沙盒模式)
 - **样式**：Tailwind CSS v4 (`@tailwindcss/vite`)
 - **2D 贴花与定制画布**：[Fabric.js](https://github.com/fabricjs/fabric.js) / [Konva.js](https://github.com/konvajs/konva)（专注纯 2D Print Area 裁剪、缩放旋转、磁吸对齐，暂不引入重型 3D 渲染）
 - **工艺质感仿真**：HTML5 Canvas Blend Modes + SVG Filter 滤镜管线（镭雕、UV 浮雕、丝印、烫金）

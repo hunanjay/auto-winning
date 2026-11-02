@@ -6,13 +6,21 @@ import React from 'react';
  */
 export default function ProductArtwork({
   svgType = 'serum',
+  customImageUrl = null,
   isCutout = false,
-  palette = 'lavender', // 'lavender' | 'botanical' | 'cream' | 'glacier' | 'rose' | 'apricot'
+  palette = 'lavender', // 'lavender' | 'botanical' | 'cream' | 'glacier' | 'rose' | 'apricot' | 'festive'
   animate = false,
   badge = '',
+  marketingBadge = null,
   className = ''
 }) {
   const palettes = {
+    festive: {
+      bg: 'from-[#FFF1F2] via-[#FFE4E6] to-[#FED7AA]',
+      glow1: 'rgba(239, 68, 68, 0.25)',
+      glow2: 'rgba(245, 158, 11, 0.22)',
+      podium: 'bg-[#FFF7ED]/90 border-amber-200'
+    },
     lavender: {
       bg: 'from-[#F3F0FF] via-[#E9E4FF] to-[#DCD4FF]',
       glow1: 'rgba(139, 92, 246, 0.22)',
@@ -102,7 +110,15 @@ export default function ProductArtwork({
           animate ? 'animate-float-gentle' : ''
         }`}
       >
-        {svgType === 'serum' && (
+        {customImageUrl ? (
+          <img
+            src={customImageUrl}
+            alt="商品主体"
+            className="max-w-full max-h-full object-contain drop-shadow-[0_16px_28px_rgba(0,0,0,0.16)]"
+          />
+        ) : (
+          <>
+            {svgType === 'serum' && (
           <svg viewBox="0 0 240 280" className="w-full h-full drop-shadow-[0_18px_24px_rgba(79,70,229,0.22)]">
             <defs>
               <linearGradient id="ltSerum" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -201,28 +217,40 @@ export default function ProductArtwork({
           </svg>
         )}
 
-        {svgType === 'dress' && (
-          <svg viewBox="0 0 240 280" className="w-full h-full drop-shadow-[0_18px_24px_rgba(236,72,153,0.2)]">
-            <defs>
-              <linearGradient id="ltSilk" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#fce7f3" />
-                <stop offset="50%" stopColor="#f472b6" />
-                <stop offset="100%" stopColor="#db2777" />
-              </linearGradient>
-            </defs>
-            <path d="M98 42 L104 75 L136 75 L142 42" fill="none" stroke="#f472b6" strokeWidth="2.5" />
-            <path
-              d="M94 68 C108 78, 132 78, 146 68 L152 118 L184 242 C152 256, 88 256, 56 242 L88 118 Z"
-              fill="url(#ltSilk)"
-              stroke="#ffffff"
-              strokeWidth="1.5"
-            />
-            <path d="M90 118 Q120 128 150 118" fill="none" stroke="#ffffff" strokeWidth="2" opacity="0.9" />
-            <path d="M104 122 L78 236" stroke="#ffffff" strokeWidth="1.5" opacity="0.55" />
-            <path d="M138 122 L164 236" stroke="#ffffff" strokeWidth="1.5" opacity="0.55" />
-          </svg>
+            {svgType === 'dress' && (
+              <svg viewBox="0 0 240 280" className="w-full h-full drop-shadow-[0_18px_24px_rgba(236,72,153,0.2)]">
+                <defs>
+                  <linearGradient id="ltSilk" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#fce7f3" />
+                    <stop offset="50%" stopColor="#f472b6" />
+                    <stop offset="100%" stopColor="#db2777" />
+                  </linearGradient>
+                </defs>
+                <path d="M98 42 L104 75 L136 75 L142 42" fill="none" stroke="#f472b6" strokeWidth="2.5" />
+                <path
+                  d="M94 68 C108 78, 132 78, 146 68 L152 118 L184 242 C152 256, 88 256, 56 242 L88 118 Z"
+                  fill="url(#ltSilk)"
+                  stroke="#ffffff"
+                  strokeWidth="1.5"
+                />
+                <path d="M90 118 Q120 128 150 118" fill="none" stroke="#ffffff" strokeWidth="2" opacity="0.9" />
+                <path d="M104 122 L78 236" stroke="#ffffff" strokeWidth="1.5" opacity="0.55" />
+                <path d="M138 122 L164 236" stroke="#ffffff" strokeWidth="1.5" opacity="0.55" />
+              </svg>
+            )}
+          </>
         )}
       </div>
+
+      {/* E-commerce High-Conversion Marketing Badge */}
+      {marketingBadge && (
+        <div className="absolute top-3 right-3 z-20 pointer-events-none">
+          <div className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-rose-600 via-red-600 to-amber-500 text-white text-[11px] font-black tracking-tight shadow-md border border-white/40 flex items-center gap-1">
+            <span>🔥</span>
+            <span>{marketingBadge}</span>
+          </div>
+        </div>
+      )}
 
       {/* Minimal Pill Tag */}
       {badge && (

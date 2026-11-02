@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Crown,
   Zap,
@@ -13,9 +13,11 @@ import {
   Gift,
   Check,
   Sparkles,
-  Share2
+  Share2,
+  Package,
+  Layers
 } from 'lucide-react';
-import { PRODUCTS, IMAGE_FEED, VIDEO_FEED, VIRAL_INSPIRATIONS } from '../data/mockData';
+import { IMAGE_FEED, VIDEO_FEED, VIRAL_INSPIRATIONS } from '../data/mockData';
 import ProductArtwork from './ProductArtwork';
 
 export default function PersonalCenter({
@@ -28,15 +30,45 @@ export default function PersonalCenter({
   onToggleBookmark,
   onMakeSameImage,
   onMakeSameVideo,
-  onAddToast
+  onAddToast,
+  allProducts = [],
+  selectedProduct,
+  onSelectProduct,
+  onOpenAddProduct,
+  onDeleteProduct
 }) {
   const [subTab, setSubTab] = useState('works'); // 'works' | 'bookmarks' | 'products' | 'settings'
   const [workFilter, setWorkFilter] = useState('all'); // 'all' | 'image' | 'video'
-  const [preferences, setPreferences] = useState({
-    removeWatermark: true,
-    hdUpscale: true,
-    privateMode: false
+
+  const [preferences, setPreferences] = useState(() => {
+    try {
+      const saved = localStorage.getItem('jm_user_preferences');
+      return saved
+        ? JSON.parse(saved)
+        : {
+            removeWatermark: true,
+            hdUpscale: true,
+            privateMode: false
+          };
+    } catch {
+      return {
+        removeWatermark: true,
+        hdUpscale: true,
+        privateMode: false
+      };
+    }
   });
+
+  const handleTogglePref = (key) => {
+    setPreferences((prev) => {
+      const updated = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem('jm_user_preferences', JSON.stringify(updated));
+      } catch {}
+      onAddToast && onAddToast('已更新偏好设置');
+      return updated;
+    });
+  };
 
   // Combine user works for clean visual gallery
   const imageWorks = IMAGE_FEED.flatMap((b) =>
@@ -82,7 +114,6 @@ export default function PersonalCenter({
       {/* Clean Jimeng-Style Creator Header Card */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col md:flex-row md:items-center md:justify-between gap-6">
         <div className="flex items-center gap-4">
-          {/* Avatar */}
           <div className="relative w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-400 p-0.5 shadow-md">
             <div className="w-full h-full rounded-full bg-white flex items-center justify-center text-lg font-extrabold text-slate-900">
               {userProfile.name.slice(0, 1)}
@@ -93,7 +124,6 @@ export default function PersonalCenter({
             </div>
           </div>
 
-          {/* Name & Stats */}
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-slate-900">{userProfile.name}</h2>
@@ -107,7 +137,7 @@ export default function PersonalCenter({
                 收藏 <strong className="text-slate-900">{bookmarkedItems.length}</strong>
               </span>
               <span>
-                被做同款 <strong className="text-slate-900">1,284</strong>
+                我的商品 <strong className="text-slate-900">{allProducts.length}</strong>
               </span>
             </div>
           </div>
@@ -152,15 +182,15 @@ export default function PersonalCenter({
           {[
             { id: 'works', label: '我的作品' },
             { id: 'bookmarks', label: `我的收藏 (${bookmarkedItems.length})` },
-            { id: 'products', label: '商品底图库' },
-            { id: 'settings', label: '积分与设置' }
+            { id: 'products', label: `我的商品库 (${allProducts.length})` },
+            { id: 'settings', label: '偏好与算力' }
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSubTab(tab.id)}
               className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
                 subTab === tab.id
-                  ? 'bg-slate-900 text-white shadow-2xs'
+                  ? 'bg-slate-900 text-white shadow-2xs font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -181,7 +211,7 @@ export default function PersonalCenter({
                 onClick={() => setWorkFilter(f.id)}
                 className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer ${
                   workFilter === f.id
-                    ? 'bg-slate-200 text-slate-900'
+                    ? 'bg-slate-200 text-slate-900 font-bold'
                     : 'text-slate-500 hover:bg-slate-100'
                 }`}
               >
@@ -202,12 +232,13 @@ export default function PersonalCenter({
             >
               <ProductArtwork
                 svgType={work.svgType}
+                customImageUrl={work.customImageUrl}
                 palette={work.palette}
                 animate={work.type === 'video'}
                 className="w-full h-full"
               />
 
-              <div className="absolute top-3 left-3 z-20 px-2.5 py-1 rounded-full bg-white/85 backdrop-blur-md text-[11px] font-medium text-slate-700 flex items-center gap-1">
+              <div className="absolute top-3 left-3 z-20 px-2.5 py-1 rounded-full bg-white/85 backdrop-blur-md text-[11px] font-medium text-slate-700 flex items-center gap-1 shadow-xs">
                 {work.type === 'video' ? (
                   <>
                     <Video className="w-3 h-3 text-indigo-600" />
@@ -232,19 +263,19 @@ export default function PersonalCenter({
                   className="px-3 py-1.5 rounded-xl bg-white text-slate-900 text-[11px] font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
                 >
                   <Sparkles className="w-3 h-3 text-indigo-600" />
-                  <span>再次创作</span>
+                  <span>做同款</span>
                 </button>
 
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => onAddToast('已发布到社区灵感广场')}
+                    onClick={() => onAddToast('已分享到社区灵感广场')}
                     title="分享到社区"
                     className="w-7 h-7 rounded-lg bg-white/85 text-slate-700 flex items-center justify-center cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => onAddToast('已下载至本地')}
+                    onClick={() => onAddToast('已下载到本地')}
                     title="下载"
                     className="w-7 h-7 rounded-lg bg-white/85 text-slate-700 flex items-center justify-center cursor-pointer"
                   >
@@ -301,40 +332,73 @@ export default function PersonalCenter({
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           {/* Upload New Product Slot */}
           <button
-            onClick={() => onAddToast('支持上传 PNG/JPG 商品图，AI 将自动完成发丝级抠图')}
-            className="aspect-square rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white/60 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+            onClick={onOpenAddProduct}
+            className="aspect-square rounded-2xl border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/40 hover:bg-indigo-50 flex flex-col items-center justify-center gap-2 text-indigo-600 transition-all cursor-pointer group shadow-2xs"
           >
-            <Plus className="w-6 h-6" />
-            <span className="text-xs font-medium">上传新商品图</span>
+            <div className="w-10 h-10 rounded-full bg-white shadow-xs flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Plus className="w-5 h-5 text-indigo-600" />
+            </div>
+            <span className="text-xs font-bold">上传店铺新商品</span>
+            <span className="text-[10px] text-slate-400">支持拖拽/自动抠图</span>
           </button>
 
-          {PRODUCTS.map((prod) => (
-            <div
-              key={prod.id}
-              className="rounded-2xl overflow-hidden bg-white border border-slate-200/80 p-2 space-y-2"
-            >
-              <div className="aspect-square rounded-xl overflow-hidden">
-                <ProductArtwork
-                  svgType={prod.svgType}
-                  isCutout={true}
-                  className="w-full h-full"
-                />
+          {allProducts.map((prod) => {
+            const isCurrent = selectedProduct?.id === prod.id;
+            const isCustom = prod.id.startsWith('prod-custom');
+            return (
+              <div
+                key={prod.id}
+                onClick={() => {
+                  onSelectProduct && onSelectProduct(prod);
+                  onAddToast(`已将「${prod.name}」设为当前工作台商品`);
+                }}
+                className={`group relative rounded-2xl overflow-hidden bg-white border transition-all p-2.5 space-y-2 cursor-pointer ${
+                  isCurrent
+                    ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
+                    : 'border-slate-200/80 hover:border-slate-300 hover:shadow-xs'
+                }`}
+              >
+                <div className="aspect-square rounded-xl overflow-hidden relative">
+                  <ProductArtwork
+                    svgType={prod.svgType}
+                    customImageUrl={prod.customImageUrl}
+                    isCutout={true}
+                    className="w-full h-full"
+                  />
+                  {isCurrent && (
+                    <div className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[9px] font-bold shadow-xs">
+                      当前选中
+                    </div>
+                  )}
+
+                  {isCustom && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteProduct && onDeleteProduct(prod.id);
+                      }}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/80 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center shadow-xs cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="删除自定义商品"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <div className="px-1 flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 truncate">{prod.name}</span>
+                  <span className="text-[10px] text-slate-400">{prod.category}</span>
+                </div>
               </div>
-              <div className="px-1 flex items-center justify-between">
-                <span className="text-xs font-medium text-slate-800 truncate">{prod.name}</span>
-                <span className="text-[10px] text-slate-400">{prod.category}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* TAB 4: Credits Log & C-End Preferences */}
+      {/* TAB 4: Credits Log & Preferences */}
       {subTab === 'settings' && (
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          {/* Left: Minimalist Preferences */}
           <div className="md:col-span-6 bg-white rounded-3xl border border-slate-200/80 p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">创作偏好设置</h3>
+            <h3 className="text-sm font-bold text-slate-900">创作与画质偏好设置</h3>
             {[
               {
                 key: 'removeWatermark',
@@ -356,9 +420,7 @@ export default function PersonalCenter({
               return (
                 <div
                   key={item.key}
-                  onClick={() =>
-                    setPreferences((prev) => ({ ...prev, [item.key]: !prev[item.key] }))
-                  }
+                  onClick={() => handleTogglePref(item.key)}
                   className="flex items-center justify-between py-2 border-b border-slate-100 last:border-none cursor-pointer"
                 >
                   <div>
@@ -381,7 +443,6 @@ export default function PersonalCenter({
             })}
           </div>
 
-          {/* Right: Credit Consumption History */}
           <div className="md:col-span-6 bg-white rounded-3xl border border-slate-200/80 p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900">近期积分明细</h3>
