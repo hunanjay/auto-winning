@@ -115,14 +115,14 @@ export default function ImageStudio({
   };
 
   // 调用 Hono 后端 (阿里云百炼 Qwen-Image-3.0) 将【产品原型图 + 企业Logo图】双图直出或 2D 贴花图转化为 2K 高奢商拍照
-  const handleDecalSceneGenerate = async ({ baseImageDataUrl, logoImageDataUrl, mold, craft, scenePrompt }) => {
+  const handleDecalSceneGenerate = async ({ baseImageDataUrl, logoImageDataUrl, mold, craft, logoPrompt, scenePrompt }) => {
     setIsGenerating(true);
     const isDualMode = Boolean(logoImageDataUrl);
     const finalPrompt = `${mold.name}（${craft.name}企业Logo定制），${scenePrompt || '高奢胡桃木极简展台，高级轮廓光，柔和阴影，4k画质'}`;
     onAddToast &&
       onAddToast(
         isDualMode
-          ? `⚡ 正在将【产品原型图 + 企业Logo】双图发送至阿里百炼 Qwen-Image-3.0 融合生成 2K 商拍大片...`
+          ? `⚡ 正在按您设定的 Logo 位置与提示词将双图发送至阿里百炼 Qwen-Image-3.0...`
           : `⚡ 正在调用阿里云百炼 Qwen-Image-3.0 渲染真实 2K 商拍大图...`
       );
 
@@ -133,7 +133,7 @@ export default function ImageStudio({
         body: JSON.stringify({
           baseImageUrl: baseImageDataUrl,
           logoImageUrl: logoImageDataUrl || undefined,
-          craftPrompt: `${craft.name}（${craft.desc}）`,
+          craftPrompt: logoPrompt || `请将图2中的Logo印制在图1产品正面居中位置，采用${craft.name}（${craft.desc}）工艺`,
           prompt: finalPrompt,
           n: 2,
           noiseLevel: 300

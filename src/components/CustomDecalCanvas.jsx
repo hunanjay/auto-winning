@@ -144,6 +144,22 @@ const PRESET_LOGOS = [
   { id: 'bolt', name: '极速闪电标' }
 ];
 
+// Logo 印制位置预设 (支持一键切换或直接在图1上点击任意坐标)
+const LOGO_POSITIONS = [
+  { id: 'center', name: '正中央居中', x: 50, y: 50, desc: '产品正面正中央醒目位置' },
+  { id: 'upper_center', name: '中上方黄金位', x: 50, y: 32, desc: '产品正面中上方黄金视觉位置' },
+  { id: 'lower_center', name: '下半部居中', x: 50, y: 70, desc: '产品正面下半部居中位置' },
+  { id: 'top_left', name: '左上角角标', x: 30, y: 28, desc: '产品正面左上角精致角标位置' },
+  { id: 'bottom_right', name: '右下角铭牌', x: 70, y: 74, desc: '产品正面右下角铭牌位置' }
+];
+
+// Logo 尺寸比例预设
+const LOGO_SIZES = [
+  { id: 'small', name: '精致小标 (16%)', scalePct: 16, desc: '精致小巧尺寸（约占产品正面宽度16%）' },
+  { id: 'medium', name: '标准适中 (28%)', scalePct: 28, desc: '标准适中尺寸（约占产品正面宽度28%）' },
+  { id: 'large', name: '醒目大标 (42%)', scalePct: 42, desc: '醒目主视觉大尺寸（约占产品正面宽度42%）' }
+];
+
 // 将内置模具渲染为不含任何 Logo 和虚线框的纯净产品原型 PNG DataURL (供双图 AI 模式使用)
 const buildCleanMoldPng = (mold) => {
   const cvs = document.createElement('canvas');
@@ -279,9 +295,34 @@ export default function CustomDecalCanvas({
   const [isEditingSafeArea, setIsEditingSafeArea] = useState(false);
   const [selectedScene, setSelectedScene] = useState(SCENE_TEMPLATES[0]);
   const [scenePrompt, setScenePrompt] = useState(SCENE_TEMPLATES[0].prompt);
+  const [selectedPos, setSelectedPos] = useState(LOGO_POSITIONS[0]);
+  const [logoPin, setLogoPin] = useState({ x: 50, y: 50, label: LOGO_POSITIONS[0].desc });
+  const [selectedSize, setSelectedSize] = useState(LOGO_SIZES[1]);
+  const [logoPrompt, setLogoPrompt] = useState(
+    `请将图2中的Logo精准印制在图1产品的【${LOGO_POSITIONS[0].desc}】，Logo大小为【${LOGO_SIZES[1].desc}】，表面采用【${CRAFT_MODES[0].name}（${CRAFT_MODES[0].desc}）】工艺，顺应产品3D立体表面透视与高光阴影`
+  );
   const [isSnapping, setIsSnapping] = useState(false);
   const [logoScale, setLogoScale] = useState(100);
   const [logoRotation, setLogoRotation] = useState(0);
+
+  // 根据位置、尺寸与工艺自动同步默认 Logo 融合提示词
+  const buildLogoFusionPrompt = (posLabel, sizeObj, craftObj) =>
+    `请将图2中的Logo精准印制在图1产品的【${posLabel}】，Logo大小为【${sizeObj.desc}】，表面采用【${craftObj.name}（${craftObj.desc}）】工艺，顺应产品3D立体表面透视与高光阴影`;
+
+  // 在图1产品图上直接点击任意位置设置 Logo 印制坐标
+  const handleProductPinClick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xPct = Math.round(Math.min(Math.max(((e.clientX - rect.left) / rect.width) * 100, 15), 85));
+    const yPct = Math.round(Math.min(Math.max(((e.clientY - rect.top) / rect.height) * 100, 15), 85));
+
+    const hDesc = xPct < 38 ? '偏左' : xPct > 62 ? '偏右' : '水平居中';
+    const vDesc = yPct < 38 ? '中上方' : yPct > 62 ? '下半部' : '垂直居中';
+    const customLabel = `产品正面${vDesc}${hDesc}区域（坐标约 X:${xPct}%, Y:${yPct}%）`;
+
+    setSelectedPos({ id: 'custom', name: '自定义点击定位', x: xPct, y: yPct, desc: customLabel });
+    setLogoPin({ x: xPct, y: yPct, label: customLabel });
+    setLogoPrompt(buildLogoFusionPrompt(customLabel, selectedSize, activeCraft));
+  };
 
   // 双图直出模式下的标准 PNG DataURL
   const [pureProductPng, setPureProductPng] = useState('');
@@ -873,6 +914,7 @@ export default function CustomDecalCanvas({
           logoImageDataUrl: pureLogoPng,
           mold: currentMoldInfo,
           craft: activeCraft,
+          logoPrompt: logoPrompt,
           scenePrompt: scenePrompt
         });
       }
@@ -976,25 +1018,47 @@ export default function CustomDecalCanvas({
                   </label>
                 </div>
 
-                {/* 产品图预览 */}
-                <label className="relative w-full aspect-square max-h-64 rounded-xl bg-white border border-slate-200/80 shadow-inner overflow-hidden flex items-center justify-center cursor-pointer group">
+                {/* 产品图预览 + 点击任意位置直接设置 Logo 印制坐标 */}
+                <div
+                  onClick={handleProductPinClick}
+                  title="点击产品图上任意位置，即可指定 Logo 合并印制点"
+                  className="relative w-full aspect-square max-h-64 rounded-xl bg-white border border-slate-200/80 shadow-inner overflow-hidden flex items-center justify-center cursor-crosshair group select-none"
+                >
                   {pureProductPng && (
                     <img
                       src={pureProductPng}
                       alt="产品原型图"
-                      className="w-full h-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
+                      className="w-full h-full object-contain p-2 pointer-events-none"
                     />
                   )}
-                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold">
-                    点击更换产品原型图
+
+                  {/* 实时可视化 Logo 印制锚点与半透明大小示意 */}
+                  <div
+                    style={{
+                      left: `${logoPin.x}%`,
+                      top: `${logoPin.y}%`,
+                      width: `${selectedSize.scalePct}%`
+                    }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200 flex flex-col items-center"
+                  >
+                    <div className="relative w-full aspect-square rounded-lg border-2 border-dashed border-blue-600 bg-blue-500/10 flex items-center justify-center p-1 shadow-sm">
+                      {pureLogoPng && (
+                        <img
+                          src={pureLogoPng}
+                          alt="Logo位置示意"
+                          className="w-full h-full object-contain opacity-75 mix-blend-multiply"
+                        />
+                      )}
+                      <span className="absolute -top-2.5 -right-2.5 w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shadow">
+                        🎯
+                      </span>
+                    </div>
                   </div>
-                  <input
-                    type="file"
-                    accept="image/png, image/jpeg, image/webp"
-                    className="hidden"
-                    onChange={handleProductImageUpload}
-                  />
-                </label>
+
+                  <div className="absolute bottom-2 inset-x-2 py-1 px-2 rounded-lg bg-slate-900/75 text-white text-[10px] font-medium text-center pointer-events-none">
+                    🎯 点击画面任意处设定 Logo 位置（当前: {selectedPos.name}）
+                  </div>
+                </div>
 
                 {/* 内置 3C 模具快速切换 */}
                 <div className="w-full mt-3">
@@ -1213,19 +1277,22 @@ export default function CustomDecalCanvas({
         )}
       </div>
 
-      {/* 右侧：工艺选择、AI 场景模版与一键双图直出按钮 */}
-      <div className="w-full lg:w-96 flex flex-col gap-4 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-6 pt-4 lg:pt-0">
+      {/* 右侧：工艺选择、Logo 合并位置/提示词、AI 场景提示词与一键双图直出按钮 */}
+      <div className="w-full lg:w-[420px] flex flex-col gap-3.5 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-6 pt-4 lg:pt-0">
         {/* 1. 工艺仿真切换 */}
         <div>
-          <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-2 flex items-center gap-1.5">
+          <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-1.5 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-amber-500" /> 1. 选择 Logo 表面定制工艺
           </label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-1.5">
             {CRAFT_MODES.map((craft) => (
               <button
                 key={craft.id}
-                onClick={() => setActiveCraft(craft)}
-                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                onClick={() => {
+                  setActiveCraft(craft);
+                  setLogoPrompt(buildLogoFusionPrompt(logoPin.label, selectedSize, craft));
+                }}
+                className={`p-2 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
                   activeCraft.id === craft.id
                     ? 'border-amber-500 bg-amber-50/40 text-amber-950 shadow-sm'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700'
@@ -1237,7 +1304,7 @@ export default function CustomDecalCanvas({
                     {craft.badge}
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-500 line-clamp-2">
+                <div className="text-[10px] text-slate-500 line-clamp-1">
                   {craft.desc}
                 </div>
               </button>
@@ -1245,12 +1312,74 @@ export default function CustomDecalCanvas({
           </div>
         </div>
 
-        {/* 2. AI 场景模板与提示词输入 */}
+        {/* 2. Logo 合并位置、大小与自定义融合提示词 */}
         <div>
-          <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-2 flex items-center gap-1.5">
-            <Wand2 className="w-3.5 h-3.5 text-indigo-600" /> 2. 选择 AI 商拍场景模版与光影
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-bold text-slate-700 tracking-wider uppercase flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-blue-600" /> 2. Logo 合并位置与融合提示词
+            </label>
+            <span className="text-[10px] text-blue-600 font-semibold">
+              可点选下方预设、点击左图1定点，或直接改词
+            </span>
+          </div>
+
+          {/* 快捷位置预设 */}
+          <div className="flex flex-wrap gap-1 mb-1.5">
+            {LOGO_POSITIONS.map((pos) => (
+              <button
+                key={pos.id}
+                onClick={() => {
+                  setSelectedPos(pos);
+                  setLogoPin({ x: pos.x, y: pos.y, label: pos.desc });
+                  setLogoPrompt(buildLogoFusionPrompt(pos.desc, selectedSize, activeCraft));
+                }}
+                className={`py-1 px-2 rounded-lg border text-[11px] font-semibold transition cursor-pointer ${
+                  selectedPos.id === pos.id
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {pos.name}
+              </button>
+            ))}
+          </div>
+
+          {/* 快捷大小比例预设 */}
+          <div className="grid grid-cols-3 gap-1.5 mb-1.5">
+            {LOGO_SIZES.map((sz) => (
+              <button
+                key={sz.id}
+                onClick={() => {
+                  setSelectedSize(sz);
+                  setLogoPrompt(buildLogoFusionPrompt(logoPin.label, sz, activeCraft));
+                }}
+                className={`py-1 px-2 rounded-lg border text-[11px] font-semibold transition cursor-pointer ${
+                  selectedSize.id === sz.id
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {sz.name}
+              </button>
+            ))}
+          </div>
+
+          {/* 可自由编写的 Logo 合并位置与工艺提示词输入框 */}
+          <textarea
+            value={logoPrompt}
+            onChange={(e) => setLogoPrompt(e.target.value)}
+            rows={2}
+            placeholder="编写 Logo 合并位置、大小、角度与工艺要求（例如：将图2的Logo印在图1产品正中央偏上位置...）"
+            className="w-full rounded-xl border border-blue-200 bg-blue-50/20 p-2 text-xs text-slate-700 focus:outline-none focus:border-blue-600 resize-none"
+          />
+        </div>
+
+        {/* 3. AI 场景模板与提示词输入 */}
+        <div>
+          <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-1.5 flex items-center gap-1.5">
+            <Wand2 className="w-3.5 h-3.5 text-indigo-600" /> 3. AI 商拍背景与光影提示词
           </label>
-          <div className="grid grid-cols-2 gap-1.5 mb-2">
+          <div className="grid grid-cols-2 gap-1.5 mb-1.5">
             {SCENE_TEMPLATES.map((tpl) => (
               <button
                 key={tpl.id}
@@ -1258,7 +1387,7 @@ export default function CustomDecalCanvas({
                   setSelectedScene(tpl);
                   setScenePrompt(tpl.prompt);
                 }}
-                className={`py-2 px-2.5 rounded-lg border text-[11px] font-semibold text-left truncate transition cursor-pointer ${
+                className={`py-1.5 px-2.5 rounded-lg border text-[11px] font-semibold text-left truncate transition cursor-pointer ${
                   selectedScene.id === tpl.id
                     ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-xs'
                     : 'border-slate-200 text-slate-600 hover:border-slate-300'
@@ -1271,9 +1400,9 @@ export default function CustomDecalCanvas({
           <textarea
             value={scenePrompt}
             onChange={(e) => setScenePrompt(e.target.value)}
-            rows={3}
+            rows={2}
             placeholder="输入你想生成的背景场景与光影描述..."
-            className="w-full rounded-xl border border-slate-200 p-2.5 text-xs text-slate-700 focus:outline-none focus:border-indigo-500 resize-none"
+            className="w-full rounded-xl border border-slate-200 p-2 text-xs text-slate-700 focus:outline-none focus:border-indigo-500 resize-none"
           />
         </div>
 
