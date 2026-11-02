@@ -15,7 +15,6 @@ import {
 import { PRODUCTS, IMAGE_FEED, VIRAL_INSPIRATIONS } from '../data/mockData';
 import ProductArtwork from './ProductArtwork';
 import ImageDetailModal from './ImageDetailModal';
-import CustomDecalCanvas from './CustomDecalCanvas';
 
 const ECOMMERCE_SCENES = [
   {
@@ -57,7 +56,6 @@ export default function ImageStudio({
   onSendToVideo,
   onAddToast
 }) {
-  const [activeTab, setActiveTab] = useState('decal'); // 'decal' | 'stream'
   const [batches, setBatches] = useState(IMAGE_FEED);
   const [prompt, setPrompt] = useState(selectedProduct.prompt);
   const [ratio, setRatio] = useState('3:4');
@@ -114,94 +112,6 @@ export default function ImageStudio({
     onAddToast && onAddToast(`已应用「${scene.name}」电商高光场景`);
   };
 
-  // 调用 Hono 后端 (阿里云百炼 Qwen-Image-3.0) 将【产品原型图 + 企业Logo图】双图直出或 2D 贴花图转化为 2K 高奢商拍照
-  const handleDecalSceneGenerate = async ({ baseImageDataUrl, logoImageDataUrl, mold, craft, logoPrompt, scenePrompt }) => {
-    setIsGenerating(true);
-    const isDualMode = Boolean(logoImageDataUrl);
-    const finalPrompt = `${mold.name}（${craft.name}企业Logo定制），${scenePrompt || '高奢胡桃木极简展台，高级轮廓光，柔和阴影，4k画质'}`;
-    onAddToast &&
-      onAddToast(
-        isDualMode
-          ? `⚡ 正在按您设定的 Logo 位置与提示词将双图发送至阿里百炼 Qwen-Image-3.0...`
-          : `⚡ 正在调用阿里云百炼 Qwen-Image-3.0 渲染真实 2K 商拍大图...`
-      );
-
-    try {
-      const res = await fetch('http://localhost:3001/api/generate-scene', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          baseImageUrl: baseImageDataUrl,
-          logoImageUrl: logoImageDataUrl || undefined,
-          craftPrompt: logoPrompt || `请将图2中的Logo印制在图1产品正面居中位置，采用${craft.name}（${craft.desc}）工艺`,
-          prompt: finalPrompt,
-          n: 2,
-          noiseLevel: 300
-        })
-      });
-
-      const result = await res.json();
-      if (result.code === 0 && result.data?.images?.length) {
-        const aiUrls = result.data.images;
-        const comparisonItems = isDualMode
-          ? [
-              {
-                id: `wanx-input-prod-${Date.now()}`,
-                customImageUrl: baseImageDataUrl,
-                isFullScene: false,
-                tag: '输入图1 · 产品原型图',
-                palette: 'glacier'
-              },
-              {
-                id: `wanx-input-logo-${Date.now()}`,
-                customImageUrl: logoImageDataUrl,
-                isFullScene: false,
-                tag: '输入图2 · 企业 Logo',
-                palette: 'lavender'
-              }
-            ]
-          : [
-              {
-                id: `wanx-cutout-${Date.now()}`,
-                customImageUrl: baseImageDataUrl,
-                isFullScene: false,
-                tag: '2D 贴花刀版原图 (对比)',
-                palette: 'glacier'
-              }
-            ];
-
-        const newBatch = {
-          id: `batch-wanx-${Date.now()}`,
-          prompt: finalPrompt,
-          model: isDualMode ? 'Qwen-Image-3.0 (双图智能贴合 2K 直出)' : 'Qwen-Image-3.0 (阿里百炼 2K 直出)',
-          ratio: '1:1',
-          time: '刚刚',
-          decalCutoutUrl: baseImageDataUrl,
-          customImageUrl: aiUrls[0],
-          items: [
-            ...aiUrls.map((url, i) => ({
-              id: `wanx-${Date.now()}-${i}`,
-              customImageUrl: url,
-              isFullScene: true,
-              tag: i === 0 ? '百炼 2K 主视觉' : `百炼 2K 侧逆光`,
-              palette: 'cream'
-            })),
-            ...comparisonItems
-          ]
-        };
-        setBatches((prev) => [newBatch, ...prev]);
-        onAddToast && onAddToast('🎉 阿里云百炼 Qwen-Image-3.0 真实 2K 商拍大图已生成！');
-      } else {
-        throw new Error(result.message || '生成失败');
-      }
-    } catch (err) {
-      console.error('百炼生图请求错误:', err);
-      onAddToast && onAddToast(`⚠️ 生图请求异常: ${err.message}`);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const handleGenerate = () => {
     if (!prompt.trim()) return;
     setIsGenerating(true);
@@ -228,103 +138,10 @@ export default function ImageStudio({
   };
 
   return (
-    <div className="relative min-h-full pb-52 space-y-6">
-      {/* 顶部模式切换 Tab */}
-      <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab('decal')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-              activeTab === 'decal'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            3C 礼品双图定制工作台 (产品原图 + Logo 直出)
-          </button>
-          <button
-            onClick={() => setActiveTab('stream')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-              activeTab === 'stream'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
-            }`}
-          >
-            <Palette className="w-3.5 h-3.5 text-indigo-400" />
-            商拍生成画廊 ({batches.length})
-          </button>
-        </div>
-
-        {activeTab === 'decal' && (
-          <div className="text-xs text-slate-500 hidden sm:flex items-center gap-1.5 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            阿里百炼 Qwen-Image-3.0 双图原生 3D 融合已就绪
-          </div>
-        )}
-      </div>
-
-      {/* Tab 1: 2D 贴花与工艺仿真画板 */}
-      {activeTab === 'decal' && (
-        <div className="space-y-6 animate-in fade-in duration-300">
-          <CustomDecalCanvas
-            onGenerateScene={handleDecalSceneGenerate}
-            isGenerating={isGenerating}
-          />
-
-          {/* 贴花画板下方的最近一次通义万相生成预览 */}
-          {batches.length > 0 && (
-            <div className="pt-4 border-t border-slate-200/80">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <span className="text-xs font-bold text-slate-800 tracking-wider uppercase flex items-center gap-1.5">
-                  <Flame className="w-3.5 h-3.5 text-amber-500" /> 最新商拍方案直出
-                </span>
-                <button
-                  onClick={() => setActiveTab('stream')}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
-                >
-                  查看全部画廊 →
-                </button>
-              </div>
-
-              {/* 展示首个 batch 的 4 宫格 */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-                {batches[0].items.map((img) => (
-                  <div
-                    key={img.id}
-                    onClick={() => setActiveDetailImage({ ...img, prompt: batches[0].prompt, ratio: batches[0].ratio })}
-                    className="group relative aspect-[3/4] rounded-2xl overflow-hidden bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition cursor-pointer"
-                  >
-                    {img.isFullScene && img.customImageUrl ? (
-                      <img
-                        src={img.customImageUrl}
-                        alt={img.tag}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                    ) : (
-                      <ProductArtwork
-                        svgType={batches[0].svgType}
-                        customImageUrl={img.customImageUrl || batches[0].customImageUrl}
-                        palette={img.palette}
-                        isCutout={false}
-                        className="w-full h-full"
-                      />
-                    )}
-                    <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-medium backdrop-blur-sm">
-                      {img.tag}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab 2: 完整生成的商拍画廊列表 */}
-      {activeTab === 'stream' && (
-        <div className="space-y-8 animate-in fade-in duration-300">
-          {batches.map((batch) => (
+    <div className="relative min-h-full pb-52 space-y-8">
+      {/* Generated Batches Stream */}
+      <div className="space-y-8">
+        {batches.map((batch) => (
           <div key={batch.id} className="space-y-3">
             {/* Minimal Prompt Header Line */}
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
@@ -367,22 +184,14 @@ export default function ImageStudio({
                     onClick={() => setActiveDetailImage(fullItemData)}
                     className={`group relative ${getCardAspect(batch.ratio)} rounded-2xl overflow-hidden bg-white border border-slate-200/80 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.08)] transition-all cursor-pointer`}
                   >
-                    {img.isFullScene && img.customImageUrl && !isCutout ? (
-                      <img
-                        src={img.customImageUrl}
-                        alt={img.tag}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                    ) : (
-                      <ProductArtwork
-                        svgType={batch.svgType}
-                        customImageUrl={isCutout ? (batch.decalCutoutUrl || batch.customImageUrl) : (img.customImageUrl || batch.customImageUrl)}
-                        palette={img.palette}
-                        isCutout={isCutout}
-                        badge={isCutout ? '白底原图' : ''}
-                        className="w-full h-full"
-                      />
-                    )}
+                    <ProductArtwork
+                      svgType={batch.svgType}
+                      customImageUrl={batch.customImageUrl}
+                      palette={img.palette}
+                      isCutout={isCutout}
+                      badge={isCutout ? '白底原图' : ''}
+                      className="w-full h-full"
+                    />
 
                     {/* Top Right Zoom Pill */}
                     <div className="absolute top-2.5 right-2.5 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -440,10 +249,8 @@ export default function ImageStudio({
           </div>
         ))}
       </div>
-      )}
 
-      {/* Floating Bottom Omnibox with E-Commerce Scene Quick Bar (only in stream gallery mode) */}
-      {activeTab === 'stream' && (
+      {/* Floating Bottom Omnibox with E-Commerce Scene Quick Bar */}
       <div className="fixed bottom-5 left-[196px] right-4 z-30 flex flex-col items-center pointer-events-none gap-2">
         {/* Top Quick Scene Presets Pill Bar for E-Commerce Sellers */}
         <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-full px-3 py-1.5 shadow-md flex items-center gap-1.5 pointer-events-auto overflow-x-auto max-w-4xl">
@@ -665,7 +472,6 @@ export default function ImageStudio({
           </div>
         </div>
       </div>
-      )}
 
       {/* Image Detail & Before/After Slider Modal */}
       <ImageDetailModal

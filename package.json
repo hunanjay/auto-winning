@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.9",
-    "fabric": "^7.4.0",
     "lucide-react": "1.21.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
