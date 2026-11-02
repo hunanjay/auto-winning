@@ -26,7 +26,9 @@ import {
   Settings2
 } from 'lucide-react';
 
-const ENV_CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
+const ENV_CLERK_KEY =
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ||
+  'pk_test_YXdhaXRlZC1wb3Jwb2lzZS0zNTc1LmNsZXJrLmFjY291bnRzLmRldiQ';
 
 const isRealClerkKey = (key) =>
   Boolean(
@@ -137,7 +139,7 @@ export function AppClerkProvider({ children, onAddToast }) {
             setAuthModalOpen(false);
             onAddToast?.(
               isNewUser
-                ? `🎉 欢迎加入 Auto 开投，${user.fullName}！已为您发放 200 初始生图算力`
+                ? `🎉 欢迎加入 auto-winning，${user.fullName}！已为您发放 200 初始生图算力`
                 : `👋 欢迎回来，${user.fullName}`
             );
           }}
@@ -158,7 +160,7 @@ export function AppClerkProvider({ children, onAddToast }) {
 /**
  * 顶部导航栏右侧的 Clerk 注册 / 登录 / 用户头像组件
  */
-export function ClerkHeaderAuthBar({ onAddToast }) {
+export function ClerkHeaderAuthBar({ onAddToast, onNavigateProfile }) {
   const {
     isLiveClerk,
     localUser,
@@ -281,6 +283,19 @@ export function ClerkHeaderAuthBar({ onAddToast }) {
               </div>
             </div>
 
+            {onNavigateProfile && (
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onNavigateProfile();
+                }}
+                className="mt-2 w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <User className="w-3.5 h-3.5 text-indigo-600" />
+                <span>我的 · 个人中心与商品库</span>
+              </button>
+            )}
+
             <button
               onClick={() => {
                 setMenuOpen(false);
@@ -339,7 +354,7 @@ export function ClerkSidebarAvatarTrigger() {
   return (
     <button
       onClick={openSignUp}
-      title="免费注册 Auto 开投"
+      title="免费注册 auto-winning"
       className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-100 to-purple-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-indigo-700 hover:bg-indigo-600 hover:text-white transition-all cursor-pointer"
     >
       注册
@@ -398,7 +413,7 @@ function ClerkAuthModal({
         providerName === 'GitHub'
           ? '1131347530@qq.com'
           : 'alex.chen@techgift.ai',
-      company: 'Auto 开投 · 3C科技定制团队',
+      company: 'auto-winning · 3C科技定制团队',
       provider: providerName,
       credits: 200
     };
@@ -480,8 +495,8 @@ function ClerkAuthModal({
               {step === 'verify'
                 ? '验证您的注册邮箱'
                 : mode === 'signup'
-                ? '创建您的 Auto 开投 账号'
-                : '登录到 Auto 开投'}
+                ? '创建您的 auto-winning 账号'
+                : '登录到 auto-winning'}
             </h2>
             <p className="text-xs text-slate-500 mt-1">
               {step === 'verify'
@@ -701,7 +716,7 @@ function ClerkAuthModal({
               </>
             ) : (
               <>
-                还没有 Auto 开投 账号？{' '}
+                还没有 auto-winning 账号？{' '}
                 <button
                   type="button"
                   onClick={() => {

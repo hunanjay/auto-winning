@@ -65,27 +65,10 @@ Agent 在新增或修改任何界面组件时，必须保持以下视觉一致�
 
 ---
 
-## 4. 强制 Git 与 GitHub Contribution 执行规范（最高优先级）
+## 4. Git 与提交流程准则（高效优先）
 
-本仓库启用了 **高频 Contribution 增长模式**（详见 [CONTRIBUTING.md](./CONTRIBUTING.md)）。
-**Agent 在每次完成代码编写或文档更新任务时，必须遵守以下铁律：**
-
-### 铁律 1：原子化拆分 Commit（严禁一锅炖）
-- **禁止**使用 `git add . && git commit` 将多个模块或不同性质的改动合并为单次提交。
-- **必须**按照修改层级将一次任务拆分为 **3 ~ 6 个独立且语义清晰的原子 Commit**：
-  1. `feat(data)` / `chore(config)`：数据模型、Mock 数据或配置文件改动
-  2. `feat(artwork)` / `feat(ui)`：底层公共视觉组件改动
-  3. `feat(image|video|slicer|knowledge)`：各业务工作台按文件独立 Commit
-  4. `style(...)` / `refactor(...)`：布局、动效与交互细节打磨
-  5. `docs(...)`：同步更新 `README.md`、`AGENT.md` 或架构文档
-
-### 铁律 2：Issue + PR + Merge Commit 闭环流水线
-当需要推送到 GitHub 远程仓库时，默认采用以下最大化 Contribution 的标准动作：
-1. 使用 `gh issue create` 创建对应任务 Issue（**+1 Contribution**）。
-2. 在特性分支（如 `feat/xxx` 或 `docs/xxx`）上完成多个原子化 Commit（**+N Contributions**）并 `git push`。
-3. 使用 `gh pr create` 创建关联该 Issue 的 Pull Request（**+1 Contribution**）。
-4. 使用 `gh pr merge --merge --delete-branch` 以 **Merge Commit** 模式合入 `main`（**+1 Contribution**，**严禁使用 `--squash`**）。
-5. 切回 `main` 分支并执行 `git pull --ff-only` 保持本地工作区同步。
+1. **开发阶段极速迭代**：日常编码与功能修改以**最快响应速度**完成，优先保障本地预览体验，**不要**在每次改代码时自动跑繁琐的拆分支、建 Issue、提 PR 等耗时网络操作。
+2. **按需提交 / 批量刷绿格**：仅当用户明确要求提交/推送，或在阶段性里程碑时，再根据需求快速执行本地多个小 Commit 直推 `main`（最快、最少等待），无需每次走完整 Issue/PR 流程。
 
 ---
 

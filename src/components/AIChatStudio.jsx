@@ -121,7 +121,7 @@ export default function AIChatStudio({
         aiResponseText = `已为你检索电商高点击主图知识库，并针对【${selectedProduct.name}】规划了如下商业级场景方案：\n\n**建议场景方案：**\n• 视觉风格：侘寂洞石 · 清晨自然水光\n• 光影布局：百叶窗斜射侧逆光 + 微弱反光板补光\n• 构图比例：3:4 小红书 / 1:1 淘宝天猫标准画幅\n\n**推荐生图提示词 (Prompt)：**\n\`${generatedPrompt}\``;
         actionSuggestion = {
           type: 'image',
-          label: '一键将此提示词带去「AI生图」',
+          label: '一键将此提示词带去「电商主图」制作',
           payload: { prompt: generatedPrompt, ratio: '3:4' }
         };
       } else if (text.includes('脚本') || text.includes('口播') || text.includes('带货') || text.includes('视频')) {
@@ -129,7 +129,7 @@ export default function AIChatStudio({
         aiResponseText = `已从爆款短视频库中检索到类似品类平均留存率达 72% 的分镜结构：\n\n**30秒黄金带货脚本规划：**\n1. **前3秒 Hook 视觉反差**：“为什么平时花上千元买的${selectedProduct.category}，其实90%都在交智商税？”\n2. **4-15秒 痛点展示**：特写质感对比，直击暗沉/干燥/卡顿痛点\n3. **16-25秒 卖点实测**：展示24小时实测效果与核心专利\n4. **26-30秒 促单逼单**：“今天大促前100单多送同款体验装，不满意包退！”\n\n**推荐视频首帧描述：**\n\`${videoPrompt}\``;
         actionSuggestion = {
           type: 'video',
-          label: '以此分镜去「AI视频」生成短片',
+          label: '以此分镜去「带货视频」制作短片',
           payload: { prompt: videoPrompt }
         };
       } else {
@@ -157,14 +157,14 @@ export default function AIChatStudio({
         ratio: action.payload.ratio || '3:4',
         svgType: selectedProduct.svgType
       });
-      onAddToast && onAddToast('已载入 AI 生图工作台');
+      onAddToast && onAddToast('已载入电商主图工作台');
     } else if (action.type === 'video') {
       onMakeSameVideo({
         prompt: action.payload.prompt,
         svgType: selectedProduct.svgType,
         palette: selectedProduct.palette
       });
-      onAddToast && onAddToast('已载入 AI 视频工作台');
+      onAddToast && onAddToast('已载入带货视频工作台');
     }
   };
 

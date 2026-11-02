@@ -96,12 +96,11 @@ export default function App() {
   };
 
   const navItems = [
-    { id: 'chat', label: 'AI对话', icon: MessageSquare },
+    { id: 'chat', label: '会话', icon: MessageSquare },
     { id: 'knowledge', label: '爆款库', icon: Compass },
-    { id: 'image', label: 'AI生图', icon: ImageIcon },
-    { id: 'video', label: 'AI视频', icon: Video },
-    { id: 'slicer', label: '智能切片', icon: Scissors },
-    { id: 'profile', label: '我的', icon: User }
+    { id: 'image', label: '图片模版库', icon: ImageIcon },
+    { id: 'video', label: '视频模版库', icon: Video },
+    { id: 'slicer', label: '智能切片', icon: Scissors }
   ];
 
   const handleAddProduct = (newProd) => {
@@ -179,28 +178,40 @@ export default function App() {
   return (
     <AppClerkProvider onAddToast={showToast}>
     <div className="h-screen w-screen overflow-hidden flex bg-[#F6F7F9] text-slate-900 select-none">
-      {/* Jimeng Style Ultra-Slim Left Icon Rail (72px) */}
-      <aside className="w-[72px] shrink-0 bg-white border-r border-slate-200/80 flex flex-col items-center justify-between py-4 z-30">
-        <div className="flex flex-col items-center gap-5">
+      {/* Standard Sidebar with Same-Row Icon + Label (184px) */}
+      <aside className="w-[184px] shrink-0 bg-white border-r border-slate-200/80 flex flex-col justify-between p-3.5 z-30">
+        <div className="flex flex-col gap-4">
+          {/* Logo & Product Title */}
           <div
             onClick={() => setActiveTab('image')}
-            className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-sm cursor-pointer hover:bg-indigo-600 transition-colors"
+            className="flex items-center gap-2.5 px-1 py-0.5 cursor-pointer group"
             title="auto-winning"
           >
-            <Sparkles className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs group-hover:bg-indigo-600 transition-colors shrink-0">
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-extrabold text-slate-900 tracking-tight leading-none">
+                auto-winning
+              </div>
+              <div className="text-[10px] text-slate-400 mt-1 font-medium truncate">
+                电商生成中心
+              </div>
+            </div>
           </div>
 
-          {/* Quick + New Template Circle Button in Sidebar */}
+          {/* Quick + New Template Button */}
           <button
             onClick={() => setIsCreateTplOpen(true)}
-            className="w-11 h-11 rounded-2xl bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white flex flex-col items-center justify-center transition-all cursor-pointer shadow-2xs"
+            className="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs font-semibold text-xs"
             title="新建我的参考模版 (支持粘贴链接)"
           >
-            <Plus className="w-4 h-4" />
-            <span className="text-[9px] font-bold mt-0.5">模版</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>新建参考模版</span>
           </button>
 
-          <nav className="flex flex-col items-center gap-1.5">
+          {/* Main Tabs: Icon and Text in the Same Row */}
+          <nav className="flex flex-col gap-1 w-full">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = activeTab === item.id;
@@ -208,32 +219,66 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-14 py-2.5 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                  className={`w-full px-3 py-2.5 rounded-xl flex items-center gap-2.5 transition-all cursor-pointer ${
                     active
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                      ? 'bg-slate-900 text-white shadow-xs font-bold'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-medium'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-[11px] font-medium tracking-tight">{item.label}</span>
+                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-indigo-400' : 'text-slate-500'}`} />
+                  <span className="text-xs tracking-tight">{item.label}</span>
                 </button>
               );
             })}
           </nav>
         </div>
 
-        {/* Bottom To-C VIP Trigger & Avatar */}
-        <div className="flex flex-col items-center gap-3">
+        {/* Bottom To-C VIP Trigger & User Avatar Button (承载「我的」入口) */}
+        <div className="flex flex-col gap-2 w-full pt-3 border-t border-slate-100">
           <button
             onClick={() => setIsVipModalOpen(true)}
-            className="w-11 h-11 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200/80 flex flex-col items-center justify-center text-amber-600 transition-colors cursor-pointer"
+            className="w-full px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200/80 flex items-center justify-between text-amber-700 transition-colors cursor-pointer text-xs font-semibold"
             title="升级会员 / 领积分"
           >
-            <Crown className="w-4 h-4" />
-            <span className="text-[9px] font-bold mt-0.5">VIP</span>
+            <div className="flex items-center gap-2">
+              <Crown className="w-4 h-4 text-amber-500" />
+              <span>会员权益</span>
+            </div>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-200/70 text-amber-900 font-bold">
+              VIP
+            </span>
           </button>
 
-          <ClerkSidebarAvatarTrigger />
+          {/* 用户头像 Button 承接「我的」 */}
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`w-full px-2.5 py-2 rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+              activeTab === 'profile'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+            title="我的 · 个人中心与店铺商品库"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  activeTab === 'profile'
+                    ? 'bg-gradient-to-tr from-indigo-500 to-pink-500 text-white ring-2 ring-white/40 shadow-xs'
+                    : 'bg-slate-200 text-slate-800'
+                }`}
+              >
+                苏
+              </div>
+              <div className="text-left min-w-0">
+                <div className="text-xs font-semibold truncate leading-tight">
+                  {userProfile.name.slice(0, 5)}
+                </div>
+                <div className={`text-[10px] truncate ${activeTab === 'profile' ? 'text-slate-300 font-medium' : 'text-slate-400'}`}>
+                  我的个人中心
+                </div>
+              </div>
+            </div>
+          </button>
         </div>
       </aside>
 
@@ -246,7 +291,7 @@ export default function App() {
             </span>
             <span className="text-slate-300">/</span>
             <span className="text-sm font-bold text-slate-700 tracking-tight">
-              {navItems.find((n) => n.id === activeTab)?.label}
+              {navItems.find((n) => n.id === activeTab)?.label || (activeTab === 'profile' ? '我的' : '')}
             </span>
           </div>
 
@@ -306,7 +351,10 @@ export default function App() {
               </div>
             )}
 
-            <ClerkHeaderAuthBar onAddToast={showToast} />
+            <ClerkHeaderAuthBar
+              onAddToast={showToast}
+              onNavigateProfile={() => setActiveTab('profile')}
+            />
           </div>
         </header>
 
