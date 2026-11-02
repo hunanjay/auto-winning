@@ -114,11 +114,17 @@ export default function ImageStudio({
     onAddToast && onAddToast(`已应用「${scene.name}」电商高光场景`);
   };
 
-  // 调用 Hono 后端 (阿里云百炼 Qwen-Image-3.0) 将 2D 贴花图转化为 2K 高奢商拍照
-  const handleDecalSceneGenerate = async ({ baseImageDataUrl, mold, craft, scenePrompt }) => {
+  // 调用 Hono 后端 (阿里云百炼 Qwen-Image-3.0) 将【产品原型图 + 企业Logo图】双图直出或 2D 贴花图转化为 2K 高奢商拍照
+  const handleDecalSceneGenerate = async ({ baseImageDataUrl, logoImageDataUrl, mold, craft, scenePrompt }) => {
     setIsGenerating(true);
+    const isDualMode = Boolean(logoImageDataUrl);
     const finalPrompt = `${mold.name}（${craft.name}企业Logo定制），${scenePrompt || '高奢胡桃木极简展台，高级轮廓光，柔和阴影，4k画质'}`;
-    onAddToast && onAddToast(`⚡ 正在调用阿里云百炼 Qwen-Image-3.0 渲染真实 2K 商拍大图 (约 8~12 秒)...`);
+    onAddToast &&
+      onAddToast(
+        isDualMode
+          ? `⚡ 正在将【产品原型图 + 企业Logo】双图发送至阿里百炼 Qwen-Image-3.0 融合生成 2K 商拍大片...`
+          : `⚡ 正在调用阿里云百炼 Qwen-Image-3.0 渲染真实 2K 商拍大图...`
+      );
 
     try {
       const res = await fetch('http://localhost:3001/api/generate-scene', {
@@ -126,6 +132,8 @@ export default function ImageStudio({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           baseImageUrl: baseImageDataUrl,
+          logoImageUrl: logoImageDataUrl || undefined,
+          craftPrompt: `${craft.name}（${craft.desc}）`,
           prompt: finalPrompt,
           n: 2,
           noiseLevel: 300
@@ -135,10 +143,37 @@ export default function ImageStudio({
       const result = await res.json();
       if (result.code === 0 && result.data?.images?.length) {
         const aiUrls = result.data.images;
+        const comparisonItems = isDualMode
+          ? [
+              {
+                id: `wanx-input-prod-${Date.now()}`,
+                customImageUrl: baseImageDataUrl,
+                isFullScene: false,
+                tag: '输入图1 · 产品原型图',
+                palette: 'glacier'
+              },
+              {
+                id: `wanx-input-logo-${Date.now()}`,
+                customImageUrl: logoImageDataUrl,
+                isFullScene: false,
+                tag: '输入图2 · 企业 Logo',
+                palette: 'lavender'
+              }
+            ]
+          : [
+              {
+                id: `wanx-cutout-${Date.now()}`,
+                customImageUrl: baseImageDataUrl,
+                isFullScene: false,
+                tag: '2D 贴花刀版原图 (对比)',
+                palette: 'glacier'
+              }
+            ];
+
         const newBatch = {
           id: `batch-wanx-${Date.now()}`,
           prompt: finalPrompt,
-          model: 'Qwen-Image-3.0 (阿里百炼 2K 直出)',
+          model: isDualMode ? 'Qwen-Image-3.0 (双图智能贴合 2K 直出)' : 'Qwen-Image-3.0 (阿里百炼 2K 直出)',
           ratio: '1:1',
           time: '刚刚',
           decalCutoutUrl: baseImageDataUrl,
@@ -151,13 +186,7 @@ export default function ImageStudio({
               tag: i === 0 ? '百炼 2K 主视觉' : `百炼 2K 侧逆光`,
               palette: 'cream'
             })),
-            {
-              id: `wanx-cutout-${Date.now()}`,
-              customImageUrl: baseImageDataUrl,
-              isFullScene: false,
-              tag: '2D 贴花刀版原图 (对比)',
-              palette: 'glacier'
-            }
+            ...comparisonItems
           ]
         };
         setBatches((prev) => [newBatch, ...prev]);
@@ -212,7 +241,7 @@ export default function ImageStudio({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            3C 科技礼品 2D 贴花定制 (Fabric.js 引擎)
+            3C 礼品双图定制工作台 (产品原图 + Logo 直出)
           </button>
           <button
             onClick={() => setActiveTab('stream')}
@@ -230,7 +259,7 @@ export default function ImageStudio({
         {activeTab === 'decal' && (
           <div className="text-xs text-slate-500 hidden sm:flex items-center gap-1.5 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            纯 2D 矢量安全区裁剪 + 工艺仿真已就绪
+            阿里百炼 Qwen-Image-3.0 双图原生 3D 融合已就绪
           </div>
         )}
       </div>

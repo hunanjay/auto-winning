@@ -18,7 +18,8 @@ import {
   Image as ImageIcon,
   Lock,
   Unlock,
-  Wand2
+  Wand2,
+  Plus
 } from 'lucide-react';
 
 // 3C 科技礼品底模配置
@@ -61,7 +62,7 @@ const PRODUCT_MOLDS = [
   }
 ];
 
-// 4 大 2D 仿真定制工艺
+// 4 大定制工艺
 const CRAFT_MODES = [
   {
     id: 'laser',
@@ -143,11 +144,123 @@ const PRESET_LOGOS = [
   { id: 'bolt', name: '极速闪电标' }
 ];
 
+// 将内置模具渲染为不含任何 Logo 和虚线框的纯净产品原型 PNG DataURL (供双图 AI 模式使用)
+const buildCleanMoldPng = (mold) => {
+  const cvs = document.createElement('canvas');
+  cvs.width = 600;
+  cvs.height = 600;
+  const ctx = cvs.getContext('2d');
+  if (!ctx) return '';
+
+  ctx.fillStyle = '#F8FAFC';
+  ctx.fillRect(0, 0, 600, 600);
+
+  const w = mold.width * 1.1;
+  const h = mold.height * 1.1;
+  const x = (600 - w) / 2;
+  const y = (600 - h) / 2;
+  const r = mold.radius * 1.1;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.16)';
+  ctx.shadowBlur = 32;
+  ctx.shadowOffsetY = 16;
+
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fillStyle = mold.bodyColor;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = mold.borderColor;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.roundRect(x + 8, y + 8, w - 16, h - 16, Math.max(r - 4, 8));
+  ctx.fillStyle = mold.innerColor;
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.stroke();
+
+  if (mold.id === 'powerbank') {
+    ctx.beginPath();
+    ctx.arc(300, 275, 76, 0, Math.PI * 2);
+    ctx.strokeStyle = '#CBD5E1';
+    ctx.lineWidth = 9;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.roundRect(295, 368, 10, 32, 5);
+    ctx.fillStyle = '#CBD5E1';
+    ctx.fill();
+
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('10000mAh · MagSafe Fast Charge', 300, y + h - 32);
+  } else if (mold.id === 'keyboard') {
+    const screws = [
+      [x + 28, y + 28],
+      [x + w - 28, y + 28],
+      [x + 28, y + h - 28],
+      [x + w - 28, y + h - 28]
+    ];
+    screws.forEach(([sx, sy]) => {
+      ctx.beginPath();
+      ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#CBD5E1';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#94A3B8';
+      ctx.stroke();
+    });
+  } else if (mold.id === 'charger') {
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('65W GaN Ultra-Fast Charger', 300, y + h - 36);
+  }
+
+  return cvs.toDataURL('image/png');
+};
+
+// 将任意图片或 SVG DataURL 光栅化为 600x600 标准白底 PNG DataURL (确保百炼 API 100% 兼容识别)
+const rasterizeImageToPng = (srcUrl, bgColor = '#FFFFFF') =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const cvs = document.createElement('canvas');
+      cvs.width = 600;
+      cvs.height = 600;
+      const ctx = cvs.getContext('2d');
+      if (!ctx) {
+        resolve(srcUrl);
+        return;
+      }
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, 600, 600);
+
+      const maxDim = 420;
+      const scale = Math.min(maxDim / (img.width || 300), maxDim / (img.height || 300));
+      const drawW = (img.width || 300) * scale;
+      const drawH = (img.height || 300) * scale;
+      ctx.drawImage(img, (600 - drawW) / 2, (600 - drawH) / 2, drawW, drawH);
+      resolve(cvs.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(srcUrl);
+    img.src = srcUrl;
+  });
+
 export default function CustomDecalCanvas({
   onGenerateScene,
   isGenerating = false,
   className = ''
 }) {
+  // 默认使用 'dual-ai'（产品原图 + Logo 直接喂给百炼大模型），可选切换 'canvas-2d'（Fabric.js 手动刀版）
+  const [workMode, setWorkMode] = useState('dual-ai');
+
   const canvasElRef = useRef(null);
   const fabricRef = useRef(null);
   const logoObjectRef = useRef(null);
@@ -162,6 +275,7 @@ export default function CustomDecalCanvas({
   const [activeCraft, setActiveCraft] = useState(CRAFT_MODES[0]);
   const [activePresetId, setActivePresetId] = useState('tech');
   const [customLogoUrl, setCustomLogoUrl] = useState(null);
+  const [customLogoName, setCustomLogoName] = useState('');
   const [isEditingSafeArea, setIsEditingSafeArea] = useState(false);
   const [selectedScene, setSelectedScene] = useState(SCENE_TEMPLATES[0]);
   const [scenePrompt, setScenePrompt] = useState(SCENE_TEMPLATES[0].prompt);
@@ -169,9 +283,40 @@ export default function CustomDecalCanvas({
   const [logoScale, setLogoScale] = useState(100);
   const [logoRotation, setLogoRotation] = useState(0);
 
-  // 初始化 Fabric.js v7 画布
+  // 双图直出模式下的标准 PNG DataURL
+  const [pureProductPng, setPureProductPng] = useState('');
+  const [pureLogoPng, setPureLogoPng] = useState('');
+
+  // 当产品模具或自定义产品图变化时，生成纯净产品图 PNG
   useEffect(() => {
-    if (!canvasElRef.current) return;
+    let active = true;
+    if (customProductUrl) {
+      rasterizeImageToPng(customProductUrl, '#F8FAFC').then((png) => {
+        if (active) setPureProductPng(png);
+      });
+    } else {
+      setPureProductPng(buildCleanMoldPng(activeMold));
+    }
+    return () => {
+      active = false;
+    };
+  }, [activeMold, customProductUrl]);
+
+  // 当预设 Logo、工艺颜色或自定义 Logo 变化时，生成纯净白底 Logo PNG
+  useEffect(() => {
+    let active = true;
+    const rawLogo = customLogoUrl || buildPresetLogoUrl(activePresetId, activeCraft.logoColor);
+    rasterizeImageToPng(rawLogo, '#FFFFFF').then((png) => {
+      if (active) setPureLogoPng(png);
+    });
+    return () => {
+      active = false;
+    };
+  }, [activePresetId, activeCraft, customLogoUrl]);
+
+  // 初始化 Fabric.js v7 画布 (仅在切换到 2D 刀版微调模式时挂载)
+  useEffect(() => {
+    if (workMode !== 'canvas-2d' || !canvasElRef.current) return;
 
     const canvasW = activeMold.width + 120;
     const canvasH = activeMold.height + 100;
@@ -199,7 +344,6 @@ export default function CustomDecalCanvas({
 
     initScene();
 
-    // 监听拖拽磁吸对齐与安全区同步
     canvas.on('object:moving', (e) => {
       if (e.target === safeRectRef.current) {
         syncClipRectWithSafeRect();
@@ -242,9 +386,8 @@ export default function CustomDecalCanvas({
       canvas.dispose();
       fabricRef.current = null;
     };
-  }, [activeMold, customProductUrl]);
+  }, [workMode, activeMold, customProductUrl]);
 
-  // 同步安全区虚线框到裁剪蒙版
   const syncClipRectWithSafeRect = () => {
     const safeRect = safeRectRef.current;
     const clipRect = clipRectRef.current;
@@ -277,7 +420,6 @@ export default function CustomDecalCanvas({
     canvas.requestRenderAll();
   };
 
-  // 切换“调整安全区范围”模式
   const toggleSafeAreaEdit = () => {
     const canvas = fabricRef.current;
     const safeRect = safeRectRef.current;
@@ -311,9 +453,8 @@ export default function CustomDecalCanvas({
     canvas.requestRenderAll();
   };
 
-  // 切换工艺时，实时更新 Logo 材质滤镜与光泽阴影
   useEffect(() => {
-    if (!fabricRef.current) return;
+    if (workMode !== 'canvas-2d' || !fabricRef.current) return;
     if (!customLogoUrl) {
       const updatedUrl = buildPresetLogoUrl(activePresetId, activeCraft.logoColor);
       loadLogo(updatedUrl, activeCraft, activeMold, true);
@@ -321,9 +462,8 @@ export default function CustomDecalCanvas({
       applyCraftToLogo(logoObjectRef.current, activeCraft);
       fabricRef.current.requestRenderAll();
     }
-  }, [activeCraft, activePresetId]);
+  }, [activeCraft, activePresetId, workMode]);
 
-  // 渲染用户上传的自定义产品底图 + 可印刷安全区
   const renderCustomProductAndSafeArea = async (canvas, imgUrl, mold) => {
     const canvasW = canvas.width;
     const canvasH = canvas.height;
@@ -358,7 +498,6 @@ export default function CustomDecalCanvas({
     }
   };
 
-  // 渲染预设 3C 产品底模
   const renderMoldAndSafeArea = (canvas, mold) => {
     const offsetX = 60;
     const offsetY = 50;
@@ -483,7 +622,6 @@ export default function CustomDecalCanvas({
     renderSafeAreaOverlay(canvas, mold);
   };
 
-  // 绘制可印刷安全区虚线框与十字磁吸线
   const renderSafeAreaOverlay = (canvas, mold) => {
     const offsetX = 60;
     const offsetY = 50;
@@ -558,7 +696,6 @@ export default function CustomDecalCanvas({
     });
   };
 
-  // 载入企业 Logo
   const loadLogo = async (imgUrl, craft = activeCraft, mold = activeMold, preserveTransform = false) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -636,7 +773,6 @@ export default function CustomDecalCanvas({
     }
   };
 
-  // 磁吸对齐逻辑
   const handleObjectMoving = (e, canvas) => {
     const obj = e.target;
     const safeRect = safeRectRef.current;
@@ -675,7 +811,7 @@ export default function CustomDecalCanvas({
     setIsSnapping(snappedX || snappedY);
   };
 
-  // 上传第 1 张图：自定义产品底图
+  // 上传第 1 张图：自定义产品原型图
   const handleProductImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -698,8 +834,11 @@ export default function CustomDecalCanvas({
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
+        setCustomLogoName(file.name.replace(/\.[^.]+$/, ''));
         setCustomLogoUrl(event.target.result);
-        loadLogo(event.target.result, activeCraft, activeMold, false);
+        if (workMode === 'canvas-2d') {
+          loadLogo(event.target.result, activeCraft, activeMold, false);
+        }
       }
     };
     reader.readAsDataURL(file);
@@ -719,15 +858,33 @@ export default function CustomDecalCanvas({
     setLogoRotation(0);
   };
 
-  // 导出纯净的合成图给阿里云百炼 (自动隐藏蓝色虚线框和辅助文字！)
+  // 提交生成：
+  // - 在 'dual-ai' 模式下，直接把【图1 纯净产品原型图】+【图2 纯净企业 Logo 图】发给阿里百炼 Qwen-Image-3.0
+  // - 在 'canvas-2d' 模式下，导出 Fabric.js 合成图（自动隐藏安全区虚线框）发给阿里百炼
   const handleExportForAI = () => {
+    const currentMoldInfo = customProductUrl
+      ? { ...activeMold, name: customProductName || '自定义产品原型' }
+      : activeMold;
+
+    if (workMode === 'dual-ai') {
+      if (onGenerateScene) {
+        onGenerateScene({
+          baseImageDataUrl: pureProductPng,
+          logoImageDataUrl: pureLogoPng,
+          mold: currentMoldInfo,
+          craft: activeCraft,
+          scenePrompt: scenePrompt
+        });
+      }
+      return;
+    }
+
     const canvas = fabricRef.current;
     if (!canvas) return;
 
     canvas.discardActiveObject();
     hideGuideLines(canvas);
 
-    // 导出前隐藏蓝色安全区虚线框和文字，确保导出的产品图 100% 纯净无 UI 污染！
     if (safeRectRef.current) safeRectRef.current.set('visible', false);
     if (safeLabelRef.current) safeLabelRef.current.set('visible', false);
     canvas.renderAll();
@@ -737,7 +894,6 @@ export default function CustomDecalCanvas({
       multiplier: 2
     });
 
-    // 导出后立即恢复安全区虚线框显示
     if (safeRectRef.current) safeRectRef.current.set('visible', true);
     if (safeLabelRef.current) safeLabelRef.current.set('visible', true);
     canvas.renderAll();
@@ -745,160 +901,331 @@ export default function CustomDecalCanvas({
     if (onGenerateScene) {
       onGenerateScene({
         baseImageDataUrl: foregroundDataUrl,
-        mold: customProductUrl
-          ? { ...activeMold, name: customProductName || '自定义上传产品' }
-          : activeMold,
+        mold: currentMoldInfo,
         craft: activeCraft,
         scenePrompt: scenePrompt
       });
     }
   };
 
+  const currentProductLabel = customProductUrl ? customProductName || '已上传产品图' : activeMold.name;
+  const currentLogoLabel = customLogoUrl
+    ? customLogoName || '已上传企业 Logo'
+    : PRESET_LOGOS.find((l) => l.id === activePresetId)?.name || '极简科技标';
+
   return (
     <div className={`flex flex-col lg:flex-row gap-6 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm ${className}`}>
-      {/* 左侧：Fabric.js 贴花交互主工作区 */}
-      <div className="flex-1 flex flex-col items-center">
-        {/* 顶部双图上传与安全区调节操作条 */}
+      {/* 左侧主工作区：默认双图 AI 智能贴合，可切换 2D 刀版微调 */}
+      <div className="flex-1 flex flex-col">
+        {/* 顶部模式切换栏 */}
         <div className="w-full flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100 mb-4">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-800 tracking-wider uppercase flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-              2D 贴花画板 (产品底图 + 企业 Logo)
+              {workMode === 'dual-ai'
+                ? 'AI 双图智能融合 (图1 产品原型 + 图2 企业 Logo ➔ 百炼直出)'
+                : '2D 贴花手动排版画板 (Fabric.js 引擎)'}
             </span>
-            {isSnapping && (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 font-semibold flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> 磁吸中心线已对齐
-              </span>
-            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* 按钮 1：上传自定义产品底图 */}
-            <label className="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-semibold flex items-center gap-1.5 cursor-pointer transition">
-              <ImageIcon className="w-3.5 h-3.5" /> ① 上传产品底图
-              <input
-                type="file"
-                accept="image/png, image/jpeg, image/webp"
-                className="hidden"
-                onChange={handleProductImageUpload}
-              />
-            </label>
-
-            {/* 按钮 2：上传企业 Logo */}
-            <label className="text-xs px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition">
-              <Upload className="w-3.5 h-3.5" /> ② 上传企业 Logo
-              <input
-                type="file"
-                accept="image/png, image/svg+xml, image/jpeg"
-                className="hidden"
-                onChange={handleLogoFileUpload}
-              />
-            </label>
-
-            {/* 按钮 3：调整安全区虚线框位置 */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
             <button
-              onClick={toggleSafeAreaEdit}
-              className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium flex items-center gap-1 transition cursor-pointer ${
-                isEditingSafeArea
-                  ? 'border-amber-500 bg-amber-50 text-amber-800'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              onClick={() => setWorkMode('dual-ai')}
+              className={`text-xs px-3 py-1.5 rounded-lg font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                workMode === 'dual-ai'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {isEditingSafeArea ? (
-                <>
-                  <Unlock className="w-3.5 h-3.5 text-amber-600" /> 完成安全区调整
-                </>
-              ) : (
-                <>
-                  <Lock className="w-3.5 h-3.5" /> 调整安全区框
-                </>
-              )}
+              <Sparkles className="w-3.5 h-3.5" /> AI 双图直出 (免排版·推荐)
             </button>
-
             <button
-              onClick={handleResetCenter}
-              title="Logo 一键居中"
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center gap-1 transition cursor-pointer"
+              onClick={() => setWorkMode('canvas-2d')}
+              className={`text-xs px-3 py-1.5 rounded-lg font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                workMode === 'canvas-2d'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <RefreshCw className="w-3.5 h-3.5" /> 居中
+              <Sliders className="w-3.5 h-3.5" /> 2D 手动刀版微调
             </button>
           </div>
         </div>
 
-        {/* 核心画布区 */}
-        <div className="relative rounded-2xl overflow-hidden border border-slate-200/70 shadow-inner flex items-center justify-center p-3 bg-[#F8FAFC]">
-          <canvas ref={canvasElRef} />
-        </div>
+        {/* 模式一：AI 双图智能贴合 (左图1产品原型 + 右图2企业Logo) */}
+        {workMode === 'dual-ai' ? (
+          <div className="flex-1 flex flex-col justify-between gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-11 gap-4 items-center my-auto">
+              {/* 卡片 ①：产品原型图 */}
+              <div className="md:col-span-5 rounded-2xl border-2 border-dashed border-indigo-200 bg-slate-50/70 p-4 flex flex-col items-center justify-between hover:border-indigo-400 transition">
+                <div className="w-full flex items-center justify-between mb-2">
+                  <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[11px] flex items-center justify-center font-bold">
+                      1
+                    </span>
+                    产品原型图
+                  </span>
+                  <label className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition">
+                    <ImageIcon className="w-3.5 h-3.5" /> 上传产品图
+                    <input
+                      type="file"
+                      accept="image/png, image/jpeg, image/webp"
+                      className="hidden"
+                      onChange={handleProductImageUpload}
+                    />
+                  </label>
+                </div>
 
-        {/* 底部微调手柄状态 */}
-        <div className="w-full mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 px-2">
-          <div className="flex items-center gap-4">
-            <span>缩放: <strong>{logoScale}%</strong></span>
-            <span>旋转: <strong>{logoRotation}°</strong></span>
-            <span className="text-indigo-600 font-medium">
-              当前工艺: <strong>{activeCraft.name}</strong>
-            </span>
-            <span className="text-emerald-600 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> 导出时自动隐藏虚线框
-            </span>
+                {/* 产品图预览 */}
+                <label className="relative w-full aspect-square max-h-64 rounded-xl bg-white border border-slate-200/80 shadow-inner overflow-hidden flex items-center justify-center cursor-pointer group">
+                  {pureProductPng && (
+                    <img
+                      src={pureProductPng}
+                      alt="产品原型图"
+                      className="w-full h-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold">
+                    点击更换产品原型图
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    className="hidden"
+                    onChange={handleProductImageUpload}
+                  />
+                </label>
+
+                {/* 内置 3C 模具快速切换 */}
+                <div className="w-full mt-3">
+                  <div className="text-[11px] text-slate-400 mb-1.5 flex items-center justify-between">
+                    <span>或选用内置 3C 原型模具：</span>
+                    {customProductUrl && (
+                      <button
+                        onClick={() => setCustomProductUrl(null)}
+                        className="text-indigo-600 hover:underline font-semibold cursor-pointer"
+                      >
+                        重置为内置模具
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {PRODUCT_MOLDS.map((mold) => (
+                      <button
+                        key={mold.id}
+                        onClick={() => {
+                          setCustomProductUrl(null);
+                          setActiveMold(mold);
+                        }}
+                        className={`py-1.5 px-2 rounded-lg border text-[11px] font-semibold truncate transition cursor-pointer ${
+                          !customProductUrl && activeMold.id === mold.id
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {mold.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 中间 + 号连接器 */}
+              <div className="md:col-span-1 flex flex-col items-center justify-center gap-1 py-2">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md flex items-center justify-center">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] font-bold text-slate-400 text-center leading-tight">
+                  AI 自动
+                  <br />
+                  3D 贴合
+                </span>
+              </div>
+
+              {/* 卡片 ②：企业品牌 Logo 图 */}
+              <div className="md:col-span-5 rounded-2xl border-2 border-dashed border-blue-200 bg-slate-50/70 p-4 flex flex-col items-center justify-between hover:border-blue-400 transition">
+                <div className="w-full flex items-center justify-between mb-2">
+                  <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[11px] flex items-center justify-center font-bold">
+                      2
+                    </span>
+                    企业品牌 Logo
+                  </span>
+                  <label className="text-xs px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition">
+                    <Upload className="w-3.5 h-3.5" /> 上传 Logo 图
+                    <input
+                      type="file"
+                      accept="image/png, image/svg+xml, image/jpeg, image/webp"
+                      className="hidden"
+                      onChange={handleLogoFileUpload}
+                    />
+                  </label>
+                </div>
+
+                {/* Logo 预览 */}
+                <label className="relative w-full aspect-square max-h-64 rounded-xl bg-white border border-slate-200/80 shadow-inner overflow-hidden flex items-center justify-center cursor-pointer group">
+                  {pureLogoPng && (
+                    <img
+                      src={pureLogoPng}
+                      alt="企业品牌 Logo"
+                      className="w-full h-full object-contain p-6 transition-transform duration-300 group-hover:scale-105"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold">
+                    点击更换企业 Logo
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/png, image/svg+xml, image/jpeg, image/webp"
+                    className="hidden"
+                    onChange={handleLogoFileUpload}
+                  />
+                </label>
+
+                {/* 内置示例 Logo 快速切换 */}
+                <div className="w-full mt-3">
+                  <div className="text-[11px] text-slate-400 mb-1.5 flex items-center justify-between">
+                    <span>或选用内置示例 Logo：</span>
+                    {customLogoUrl && (
+                      <button
+                        onClick={() => setCustomLogoUrl(null)}
+                        className="text-blue-600 hover:underline font-semibold cursor-pointer"
+                      >
+                        重置为示例 Logo
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {PRESET_LOGOS.map((logo) => (
+                      <button
+                        key={logo.id}
+                        onClick={() => {
+                          setCustomLogoUrl(null);
+                          setActivePresetId(logo.id);
+                        }}
+                        className={`py-1.5 px-2 rounded-lg border text-[11px] font-semibold truncate transition cursor-pointer ${
+                          !customLogoUrl && activePresetId === logo.id
+                            ? 'border-blue-600 bg-blue-50 text-blue-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {logo.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 底部双图融合管线状态说明 */}
+            <div className="w-full rounded-2xl bg-gradient-to-r from-indigo-50/80 via-blue-50/80 to-slate-50 border border-indigo-100 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-slate-700">
+                <span className="px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-indigo-700 font-bold">
+                  图1: {currentProductLabel}
+                </span>
+                <span className="text-slate-400 font-bold">+</span>
+                <span className="px-2 py-0.5 rounded-md bg-white border border-slate-300 text-slate-800 font-bold">
+                  图2: {currentLogoLabel}
+                </span>
+                <span className="text-slate-400 font-bold">+</span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-bold">
+                  工艺: {activeCraft.name}
+                </span>
+              </div>
+              <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> 无需手动对齐，百炼 Qwen-Image-3.0 自动识别产品 3D 表面贴合
+              </span>
+            </div>
           </div>
-          <span className="text-slate-400">
-            {isEditingSafeArea
-              ? '🔧 当前正在调整蓝色安全区范围，调整完请点击上方「完成安全区调整」'
-              : '💡 支持上传您的任意商品白底图 + 企业 Logo，点击右侧一键生成真实商拍场景'}
-          </span>
-        </div>
+        ) : (
+          /* 模式二：Fabric.js 2D 刀版手动微调模式 */
+          <div className="flex-1 flex flex-col items-center">
+            <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-semibold flex items-center gap-1.5 cursor-pointer transition">
+                  <ImageIcon className="w-3.5 h-3.5" /> ① 上传产品底图
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    className="hidden"
+                    onChange={handleProductImageUpload}
+                  />
+                </label>
+
+                <label className="text-xs px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition">
+                  <Upload className="w-3.5 h-3.5" /> ② 上传企业 Logo
+                  <input
+                    type="file"
+                    accept="image/png, image/svg+xml, image/jpeg"
+                    className="hidden"
+                    onChange={handleLogoFileUpload}
+                  />
+                </label>
+
+                <button
+                  onClick={toggleSafeAreaEdit}
+                  className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium flex items-center gap-1 transition cursor-pointer ${
+                    isEditingSafeArea
+                      ? 'border-amber-500 bg-amber-50 text-amber-800'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {isEditingSafeArea ? (
+                    <>
+                      <Unlock className="w-3.5 h-3.5 text-amber-600" /> 完成安全区调整
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5" /> 调整安全区框
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={handleResetCenter}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center gap-1 transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> 居中
+                </button>
+              </div>
+
+              {isSnapping && (
+                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> 磁吸中心线已对齐
+                </span>
+              )}
+            </div>
+
+            <div className="relative rounded-2xl overflow-hidden border border-slate-200/70 shadow-inner flex items-center justify-center p-3 bg-[#F8FAFC]">
+              <canvas ref={canvasElRef} />
+            </div>
+
+            <div className="w-full mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 px-2">
+              <div className="flex items-center gap-4">
+                <span>缩放: <strong>{logoScale}%</strong></span>
+                <span>旋转: <strong>{logoRotation}°</strong></span>
+                <span className="text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> 导出时自动隐藏虚线框
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 右侧：产品模具、工艺、AI 场景模版与生成面板 */}
+      {/* 右侧：工艺选择、AI 场景模版与一键双图直出按钮 */}
       <div className="w-full lg:w-96 flex flex-col gap-4 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-6 pt-4 lg:pt-0">
-        {/* 1. 模具切换或自定义产品图状态 */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-bold text-slate-700 tracking-wider uppercase flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-blue-600" /> 1. 产品底图 (内置模具或上传)
-            </label>
-            {customProductUrl && (
-              <button
-                onClick={() => setCustomProductUrl(null)}
-                className="text-[11px] text-blue-600 hover:underline cursor-pointer"
-              >
-                恢复内置 3C 模具
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {PRODUCT_MOLDS.map((mold) => (
-              <button
-                key={mold.id}
-                onClick={() => {
-                  setCustomProductUrl(null);
-                  setActiveMold(mold);
-                }}
-                className={`p-2 rounded-xl border text-left transition cursor-pointer ${
-                  !customProductUrl && activeMold.id === mold.id
-                    ? 'border-blue-600 bg-blue-50/60 text-blue-900 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                }`}
-              >
-                <div className="text-[11px] font-bold truncate">{mold.name}</div>
-                <div className="text-[10px] text-slate-400 truncate mt-0.5">{mold.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 2. 工艺仿真切换 */}
+        {/* 1. 工艺仿真切换 */}
         <div>
           <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-2 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" /> 2. 选择 Logo 定制工艺
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" /> 1. 选择 Logo 表面定制工艺
           </label>
           <div className="grid grid-cols-2 gap-2">
             {CRAFT_MODES.map((craft) => (
               <button
                 key={craft.id}
                 onClick={() => setActiveCraft(craft)}
-                className={`p-2 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
                   activeCraft.id === craft.id
                     ? 'border-amber-500 bg-amber-50/40 text-amber-950 shadow-sm'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700'
@@ -910,7 +1237,7 @@ export default function CustomDecalCanvas({
                     {craft.badge}
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-500 line-clamp-1">
+                <div className="text-[10px] text-slate-500 line-clamp-2">
                   {craft.desc}
                 </div>
               </button>
@@ -918,35 +1245,10 @@ export default function CustomDecalCanvas({
           </div>
         </div>
 
-        {/* 3. 预设快速测试 Logo */}
+        {/* 2. AI 场景模板与提示词输入 */}
         <div>
-          <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-1.5 flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-slate-600" /> 示例 Logo (或点击左上方上传)
-          </label>
-          <div className="flex items-center gap-2">
-            {PRESET_LOGOS.map((logo) => (
-              <button
-                key={logo.id}
-                onClick={() => {
-                  setCustomLogoUrl(null);
-                  setActivePresetId(logo.id);
-                }}
-                className={`flex-1 py-1.5 px-2 rounded-lg border text-[11px] font-semibold transition cursor-pointer ${
-                  !customLogoUrl && activePresetId === logo.id
-                    ? 'border-blue-600 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 hover:border-blue-400 text-slate-600 hover:text-blue-600'
-                }`}
-              >
-                {logo.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 4. AI 场景模板与提示词输入 */}
-        <div>
-          <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-1.5 flex items-center gap-1.5">
-            <Wand2 className="w-3.5 h-3.5 text-indigo-600" /> 3. 选择 AI 商拍场景模版与光影
+          <label className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-2 flex items-center gap-1.5">
+            <Wand2 className="w-3.5 h-3.5 text-indigo-600" /> 2. 选择 AI 商拍场景模版与光影
           </label>
           <div className="grid grid-cols-2 gap-1.5 mb-2">
             {SCENE_TEMPLATES.map((tpl) => (
@@ -956,9 +1258,9 @@ export default function CustomDecalCanvas({
                   setSelectedScene(tpl);
                   setScenePrompt(tpl.prompt);
                 }}
-                className={`py-1.5 px-2.5 rounded-lg border text-[11px] font-semibold text-left truncate transition cursor-pointer ${
+                className={`py-2 px-2.5 rounded-lg border text-[11px] font-semibold text-left truncate transition cursor-pointer ${
                   selectedScene.id === tpl.id
-                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-xs'
                     : 'border-slate-200 text-slate-600 hover:border-slate-300'
                 }`}
               >
@@ -969,31 +1271,36 @@ export default function CustomDecalCanvas({
           <textarea
             value={scenePrompt}
             onChange={(e) => setScenePrompt(e.target.value)}
-            rows={2}
+            rows={3}
             placeholder="输入你想生成的背景场景与光影描述..."
             className="w-full rounded-xl border border-slate-200 p-2.5 text-xs text-slate-700 focus:outline-none focus:border-indigo-500 resize-none"
           />
         </div>
 
-        {/* 5. 提交 AI 场景融合生成按钮 */}
-        <div className="mt-auto pt-2 border-t border-slate-100 flex flex-col gap-1.5">
+        {/* 3. 提交 AI 双图直出按钮 */}
+        <div className="mt-auto pt-3 border-t border-slate-100 flex flex-col gap-2">
           <button
             onClick={handleExportForAI}
             disabled={isGenerating}
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 transition cursor-pointer"
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 transition cursor-pointer"
           >
             {isGenerating ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                正在调用阿里云百炼生成真实商拍图...
+                正在将【产品图 + Logo】双图送入百炼生成...
               </>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                一键生成高奢商拍大图 (阿里百炼直出)
+                {workMode === 'dual-ai'
+                  ? '一键双图直出 2K 商拍大片 (阿里百炼 Qwen-Image-3.0)'
+                  : '一键从 2D 刀版生成商拍大图'}
               </>
             )}
           </button>
+          <p className="text-[11px] text-slate-400 text-center">
+            底层直连阿里百炼 <code className="text-slate-600 font-semibold">qwen-image-3.0</code> (2048×2048 2K 多图融合)
+          </p>
         </div>
       </div>
     </div>

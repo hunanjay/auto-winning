@@ -55,8 +55,20 @@ const GenerateSceneRequestSchema = z
     baseImageUrl: z
       .string()
       .openapi({
-        description: '前端 Canvas 导出的透明底或白色底产品图 URL (包含企业Logo)',
+        description: '产品原型图 URL 或 Base64 DataURL (或 2D 合成图)',
         example: 'https://dashscope.oss-cn-beijing.aliyuncs.com/samples/image/wanx/powerbank_white.png',
+      }),
+    logoImageUrl: z
+      .string()
+      .optional()
+      .openapi({
+        description: '企业品牌 Logo 图 URL 或 Base64 DataURL (传入时自动启用 Qwen-Image-3.0 双图 3D 智能贴合模式)',
+      }),
+    craftPrompt: z
+      .string()
+      .optional()
+      .openapi({
+        description: '定制工艺材质描述 (如金属激光镭雕、UV 3D 微浮雕、香槟烫金等)',
       }),
     prompt: z
       .string()
@@ -173,10 +185,12 @@ const generateSceneRoute = createRoute({
 
 app.openapi(generateSceneRoute, async (c) => {
   try {
-    const { baseImageUrl, prompt, n, noiseLevel } = c.req.valid('json');
+    const { baseImageUrl, logoImageUrl, craftPrompt, prompt, n, noiseLevel } = c.req.valid('json');
 
     const images = await cordisCtx.aliyunWanx.generateEcommerceScene({
       baseImageUrl,
+      logoImageUrl,
+      craftPrompt,
       prompt: prompt || '高奢极简展台，高级轮廓光，柔和阴影，4k画质',
       n: n || 4,
       noiseLevel: noiseLevel || 300,
