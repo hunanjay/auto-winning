@@ -73,6 +73,8 @@ npm run build
 
 - **框架**：React 19 + Vite 8
 - **样式**：Tailwind CSS v4 (`@tailwindcss/vite`)
+- **2D 贴花与定制画布**：[Fabric.js](https://github.com/fabricjs/fabric.js) / [Konva.js](https://github.com/konvajs/konva)（专注纯 2D Print Area 裁剪、缩放旋转、磁吸对齐，暂不引入重型 3D 渲染）
+- **工艺质感仿真**：HTML5 Canvas Blend Modes + SVG Filter 滤镜管线（镭雕、UV 浮雕、丝印、烫金）
 - **图标**：Lucide React
 
 ---
