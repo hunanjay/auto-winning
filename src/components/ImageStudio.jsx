@@ -472,11 +472,11 @@ export default function ImageStudio({
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                rows={6}
+                rows={10}
                 placeholder="详细描述想要的商拍场景、光影氛围或 Logo 印制位置（例如：放置在北美黑胡桃木办公桌上，午后百叶窗柔和暖光，旁边有咖啡杯，大师级商业摄影真实质感）..."
-                className="w-full min-h-[130px] bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
+                className="w-full min-h-[220px] bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
               />
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-[11px] text-slate-400">
+              <div className="flex items-center justify-between pt-2.5 border-t border-slate-200/60 text-[11px] text-slate-400">
                 <span>{prompt.length ? `${prompt.length} 字` : '支持文字直接指定主体与场景'}</span>
                 {prompt && (
                   <button
