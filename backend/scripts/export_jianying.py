@@ -125,22 +125,48 @@ def export_draft(payload):
     draft_folder_path = os.path.join(root_path, draft_name)
     draft_id = str(uuid.uuid4()).upper()
 
-    # 解决 macOS 沙盒权限限制：剪映 App Store 版无法直接访问工作区 ~/ai_platform/ 路径
-    # 利用 macOS APFS 写时克隆 (Copy-on-Write, 耗时 0ms, 占 0 额外磁盘)，将原视频映射进草稿自带的 materials/ 目录
+    # 跨平台素材映射机制：
+    # 1. macOS：App Store/沙盒版剪映无法读取外部目录，利用 APFS 写时克隆 (cp -c)，0ms 耗时，0 额外磁盘占用。
+    # 2. Windows：
+    #    - Windows 剪映基于 Win32 架构，原生没有 App Sandbox 权限限制，可直接读取系统任意磁盘路径。
+    #    - 为保证草稿独立性与防误删，优先使用 NTFS 硬链接 (os.link) 映射至草稿 materials/，耗时 0ms，0 额外磁盘占用。
+    #    - 若原视频与草稿箱跨盘符（例如 C盘 vs D盘），Windows 会直接引用原视频绝对路径，免去大文件重复拷贝的漫长等待。
+    video_mat_path = video_path
     draft_materials_dir = os.path.join(draft_folder_path, "materials")
-    os.makedirs(draft_materials_dir, exist_ok=True)
     video_filename = os.path.basename(video_path)
     internal_video_path = os.path.join(draft_materials_dir, video_filename)
-    if not os.path.exists(internal_video_path):
-        try:
-            import subprocess
-            subprocess.run(["cp", "-c", video_path, internal_video_path], check=True)
-        except Exception:
-            shutil.copyfile(video_path, internal_video_path)
+
+    if sys.platform == "darwin":
+        os.makedirs(draft_materials_dir, exist_ok=True)
+        if not os.path.exists(internal_video_path):
+            try:
+                import subprocess
+                subprocess.run(["cp", "-c", video_path, internal_video_path], check=True)
+                video_mat_path = internal_video_path
+            except Exception:
+                try:
+                    os.link(video_path, internal_video_path)
+                    video_mat_path = internal_video_path
+                except Exception:
+                    shutil.copyfile(video_path, internal_video_path)
+                    video_mat_path = internal_video_path
+        else:
+            video_mat_path = internal_video_path
+    elif sys.platform.startswith("win"):
+        os.makedirs(draft_materials_dir, exist_ok=True)
+        if not os.path.exists(internal_video_path):
+            try:
+                os.link(video_path, internal_video_path)
+                video_mat_path = internal_video_path
+            except Exception:
+                # 跨盘符无法硬链接时，Windows 剪映无沙盒限制，直接使用原视频物理路径，免去大文件耗时拷贝
+                video_mat_path = video_path
+        else:
+            video_mat_path = internal_video_path
 
     # 1. 视频主轨道
     script.append_track(draft.TrackSpec(draft.TrackType.video, name="main_video"))
-    video_mat = draft.VideoMaterial(internal_video_path)
+    video_mat = draft.VideoMaterial(video_mat_path)
 
     # 2. 字幕副轨道
     script.append_track(draft.TrackSpec(draft.TrackType.text, name="subtitles"))

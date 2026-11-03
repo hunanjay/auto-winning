@@ -49,7 +49,8 @@ export async function launchJianyingApp(): Promise<boolean> {
       // 优先通过 AppleScript 激活置顶剪映，如果应用未启动则通过 open 启动并置顶
       cmd = `osascript -e 'tell application id "com.lemon.lvpro" to activate' 2>/dev/null || open -b com.lemon.lvpro || open -a "/Applications/VideoFusion-macOS.app"`;
     } else if (process.platform === 'win32') {
-      cmd = `start "" "JianyingPro.exe"`;
+      // Windows 上优先通过剪映注册的原生协议 videocut:// 唤起，其次尝试从 PATH 启动可执行文件
+      cmd = `explorer "videocut://" 2>nul || start "" "JianyingPro.exe" 2>nul`;
     }
 
     if (!cmd) {
