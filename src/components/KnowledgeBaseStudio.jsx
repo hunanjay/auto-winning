@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Play,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { VIRAL_INSPIRATIONS } from '../data/mockData';
 import ProductArtwork from './ProductArtwork';
+import XiaohongshuDetailModal from './XiaohongshuDetailModal';
 
 export default function KnowledgeBaseStudio({
   customTemplates = [],
@@ -25,6 +26,7 @@ export default function KnowledgeBaseStudio({
   onToggleBookmark,
   onOpenCreateTemplate,
   onDeleteTemplate,
+  onUpdateTemplate,
   onMakeSameImage,
   onMakeSameVideo,
   onAddToast
@@ -34,16 +36,50 @@ export default function KnowledgeBaseStudio({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('recommend'); // 'recommend' | 'retention' | 'likes'
   const [activeModalItem, setActiveModalItem] = useState(null);
+  const [gptImageCases, setGptImageCases] = useState([]);
+  const [isDshLoaded, setIsDshLoaded] = useState(false);
+
+  useEffect(() => {
+    // 从 DeepSeek Harness (DSH) GPT-Image-2 插件获取工业级案例库
+    fetch('http://localhost:3001/api/style-library/cases?pageSize=120')
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.code === 0 && json.data?.cases) {
+          const mapped = json.data.cases.map((c) => ({
+            id: `gpt2-${c.id}`,
+            originalId: c.id,
+            title: c.title,
+            category: 'GPT-Image-2',
+            subCategory: c.category,
+            hook: c.promptPreview || c.title,
+            prompt: c.prompt,
+            ratio: '3:4',
+            likes: `${(c.id * 19) % 800 + 200}`,
+            retention: `${80 + (c.id % 18)}%`,
+            isCustom: false,
+            isGptImage2: true,
+            customImageUrl: c.imageUrl,
+            sourceUrl: c.sourceUrl,
+            sourceLabel: c.sourceLabel,
+            tags: [...(c.styles || []), ...(c.scenes || [])],
+          }));
+          setGptImageCases(mapped);
+          setIsDshLoaded(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const tabs = [
     '全部',
+    `GPT-Image-2 风格库 (${gptImageCases.length || 541})`,
     `我的模版 (${customTemplates.length})`,
     '爆款视频',
     '爆款文案',
+    '数码',
     '美妆',
     '家电',
-    '数码',
-    '穿搭'
+    '穿搭',
   ];
 
   const ratioOptions = [
@@ -54,7 +90,7 @@ export default function KnowledgeBaseStudio({
     { id: '16:9', label: '16:9', desc: '横屏' }
   ];
 
-  const allItems = [...customTemplates, ...VIRAL_INSPIRATIONS];
+  const allItems = [...customTemplates, ...gptImageCases, ...VIRAL_INSPIRATIONS];
 
   let filteredItems = allItems.filter((item) => {
     // Ratio filter
@@ -65,6 +101,7 @@ export default function KnowledgeBaseStudio({
     // Category filter
     let matchCat = true;
     if (filter === '全部') matchCat = true;
+    else if (filter.startsWith('GPT-Image-2')) matchCat = Boolean(item.isGptImage2);
     else if (filter.startsWith('我的模版')) matchCat = item.isCustom;
     else if (filter === '爆款视频') matchCat = item.type === 'video';
     else if (filter === '爆款文案') matchCat = item.type === 'copy';
@@ -79,6 +116,8 @@ export default function KnowledgeBaseStudio({
         (item.title && item.title.toLowerCase().includes(q)) ||
         (item.hook && item.hook.toLowerCase().includes(q)) ||
         (item.category && item.category.toLowerCase().includes(q)) ||
+        (item.subCategory && item.subCategory.toLowerCase().includes(q)) ||
+        (item.tags && item.tags.some((t) => t.toLowerCase().includes(q))) ||
         (item.prompt && item.prompt.toLowerCase().includes(q));
       if (!matchText) return false;
     }
@@ -282,6 +321,11 @@ export default function KnowledgeBaseStudio({
                       <Sparkles className="w-3 h-3 text-indigo-600" />
                       <span className="text-indigo-600 font-semibold">我的模版</span>
                     </>
+                  ) : item.isGptImage2 ? (
+                    <>
+                      <Sparkles className="w-3 h-3 text-purple-600" />
+                      <span className="text-purple-700 font-semibold text-[10px] truncate max-w-[90px]">{item.subCategory || 'GPT-Image-2'}</span>
+                    </>
                   ) : item.type === 'video' ? (
                     <>
                       <Play className="w-3 h-3 fill-slate-700" />
@@ -371,108 +415,23 @@ export default function KnowledgeBaseStudio({
         })}
       </div>
 
-      {/* Detail Modal */}
+      {/* Xiaohongshu Style Detail Modal (支持多图轮播、上传多图、编辑图片数量) */}
       {activeModalItem && (
-        <div
-          onClick={() => setActiveModalItem(null)}
-          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl border border-slate-200/80 grid grid-cols-1 md:grid-cols-12"
-          >
-            {/* Left Artwork */}
-            <div className="md:col-span-6 aspect-square md:aspect-auto min-h-[340px]">
-              {activeModalItem.customImageUrl ? (
-                <img
-                  src={activeModalItem.customImageUrl}
-                  alt={activeModalItem.title}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <ProductArtwork
-                  svgType={activeModalItem.svgType}
-                  palette={activeModalItem.palette}
-                  animate={true}
-                  className="w-full h-full"
-                />
-              )}
-            </div>
-
-            {/* Right Info */}
-            <div className="md:col-span-6 p-6 flex flex-col justify-between space-y-5">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
-                      {activeModalItem.category}
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-semibold font-mono">
-                      {activeModalItem.ratio || '3:4'} {activeModalItem.sizeLabel || ''}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setActiveModalItem(null)}
-                    className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 leading-snug">
-                    {activeModalItem.title}
-                  </h3>
-                  <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                    <span>点赞 {activeModalItem.likes}</span>
-                    <span>•</span>
-                    <span>留存转化率 {activeModalItem.retention || '68%'}</span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70 space-y-1.5">
-                  <div className="text-[11px] font-bold text-indigo-600">
-                    💡 爆款黄金前3秒 Hook 话术
-                  </div>
-                  <div className="text-xs text-slate-700 font-medium leading-relaxed">
-                    {activeModalItem.hook}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-xs font-bold text-slate-800">反推电商提示词</div>
-                  <div className="p-2.5 rounded-xl bg-slate-50 text-xs text-slate-600 leading-relaxed font-mono">
-                    {activeModalItem.prompt}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
-                <button
-                  onClick={() => {
-                    onMakeSameImage(activeModalItem);
-                    setActiveModalItem(null);
-                  }}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>以此做同款电商图</span>
-                </button>
-                <button
-                  onClick={() => {
-                    onMakeSameVideo(activeModalItem);
-                    setActiveModalItem(null);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  <span>生带货视频</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <XiaohongshuDetailModal
+          item={activeModalItem}
+          isBookmarked={bookmarkedIds.includes(activeModalItem.id)}
+          onClose={() => setActiveModalItem(null)}
+          onToggleBookmark={onToggleBookmark}
+          onMakeSameImage={onMakeSameImage}
+          onMakeSameVideo={onMakeSameVideo}
+          onUpdateTemplate={(updatedItem) => {
+            setActiveModalItem(updatedItem);
+            if (onUpdateTemplate) {
+              onUpdateTemplate(updatedItem);
+            }
+          }}
+          onAddToast={onAddToast}
+        />
       )}
     </div>
   );

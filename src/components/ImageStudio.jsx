@@ -175,6 +175,7 @@ export default function ImageStudio({
   selectedProduct,
   externalPrompt,
   externalRatio,
+  externalImages,
   onSendToVideo,
   onAddToast
 }) {
@@ -195,7 +196,16 @@ export default function ImageStudio({
   useEffect(() => {
     if (externalPrompt) setPrompt(externalPrompt);
     if (externalRatio) setRatio(externalRatio);
-  }, [externalPrompt, externalRatio]);
+    if (Array.isArray(externalImages) && externalImages.length > 0) {
+      setUploadedImages(
+        externalImages.slice(0, 4).map((url, idx) => ({
+          id: `ext-${Date.now()}-${idx}`,
+          url,
+          label: idx === 0 ? '商品' : `图${idx + 1}·参考`
+        }))
+      );
+    }
+  }, [externalPrompt, externalRatio, externalImages]);
 
   const handleSelectExample = (ex) => {
     const imgs = ex.types.map((t, idx) => ({

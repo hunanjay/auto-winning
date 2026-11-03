@@ -25,6 +25,7 @@ import MembershipModal from './components/MembershipModal';
 import CreateTemplateModal from './components/CreateTemplateModal';
 import AddProductModal from './components/AddProductModal';
 import AIChatStudio from './components/AIChatStudio';
+import DshPluginTesterStudio from './components/DshPluginTesterStudio';
 import {
   AppClerkProvider,
   ClerkHeaderAuthBar,
@@ -37,6 +38,7 @@ const TAB_ROUTES = {
   image: '/image',
   video: '/video',
   slicer: '/slicer',
+  dshTester: '/dsh-tester',
   profile: '/profile',
 };
 
@@ -98,10 +100,11 @@ export default function App() {
 
   const [externalImagePrompt, setExternalImagePrompt] = useState('');
   const [externalImageRatio, setExternalImageRatio] = useState('3:4');
+  const [externalImages, setExternalImages] = useState([]);
   const [incomingVideoFrame, setIncomingVideoFrame] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // Custom Reference Templates (persisted in localStorage)
+  // Custom Reference Templates (persisted in SQLite DB & localStorage)
   const [customTemplates, setCustomTemplates] = useState(() => {
     try {
       const saved = localStorage.getItem('jm_custom_templates');
@@ -111,6 +114,51 @@ export default function App() {
     }
   });
   const [isCreateTplOpen, setIsCreateTplOpen] = useState(false);
+
+  // 从 SQLite 数据库加载并双向同步自定义模版
+  useEffect(() => {
+    fetch('http://localhost:3001/api/templates')
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.code === 0 && Array.isArray(res.data)) {
+          if (res.data.length > 0) {
+            setCustomTemplates(res.data);
+            try {
+              localStorage.setItem('jm_custom_templates', JSON.stringify(res.data));
+            } catch {}
+          } else if (customTemplates.length > 0) {
+            // 本地缓存有历史模版但 SQLite 尚为空，自动将本地模版同步迁移到 SQLite
+            fetch('http://localhost:3001/api/templates', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(customTemplates),
+            }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+
+    // 同步商品
+    fetch('http://localhost:3001/api/products')
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.code === 0 && Array.isArray(res.data)) {
+          if (res.data.length > 0) {
+            setCustomProducts(res.data);
+            try {
+              localStorage.setItem('jm_custom_products', JSON.stringify(res.data));
+            } catch {}
+          } else if (customProducts.length > 0) {
+            fetch('http://localhost:3001/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(customProducts),
+            }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     try {
@@ -142,7 +190,8 @@ export default function App() {
     { id: 'knowledge', label: '爆款库', icon: Compass, path: TAB_ROUTES.knowledge },
     { id: 'image', label: '图片模版库', icon: ImageIcon, path: TAB_ROUTES.image },
     { id: 'video', label: '视频模版库', icon: Video, path: TAB_ROUTES.video },
-    { id: 'slicer', label: '智能切片', icon: Scissors, path: TAB_ROUTES.slicer }
+    { id: 'slicer', label: '智能切片', icon: Scissors, path: TAB_ROUTES.slicer },
+    { id: 'dshTester', label: 'DSH 风格插件测试', icon: Sparkles, badge: 'DSH', path: TAB_ROUTES.dshTester }
   ];
 
   const currentTabLabel =
@@ -156,7 +205,13 @@ export default function App() {
   const handleAddProduct = (newProd) => {
     setCustomProducts((prev) => [newProd, ...prev]);
     setSelectedProduct(newProd);
-    showToast(`已成功添加店铺商品「${newProd.name}」并设为当前工作台商品`);
+    showToast(`已成功添加店铺商品「${newProd.name}」（已同步至 SQLite）`);
+
+    fetch('http://localhost:3001/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newProd),
+    }).catch((err) => console.error('保存商品到 SQLite 失败:', err));
   };
 
   const handleDeleteProduct = (prodId) => {
@@ -165,16 +220,42 @@ export default function App() {
       setSelectedProduct(PRODUCTS[0]);
     }
     showToast('已移除该自定义商品');
+
+    fetch(`http://localhost:3001/api/products/${prodId}`, {
+      method: 'DELETE',
+    }).catch((err) => console.error('从 SQLite 删除商品失败:', err));
   };
 
   const handleSaveTemplate = (tpl) => {
     setCustomTemplates((prev) => [tpl, ...prev]);
-    showToast(`已保存至我的参考模版：「${tpl.title}」`);
+    showToast(`已保存至我的参考模版：「${tpl.title}」（已存入 SQLite）`);
+
+    fetch('http://localhost:3001/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tpl),
+    }).catch((err) => console.error('保存模版到 SQLite 失败:', err));
   };
 
   const handleDeleteTemplate = (tplId) => {
     setCustomTemplates((prev) => prev.filter((t) => t.id !== tplId));
-    showToast('已删除该模版');
+    showToast('已从模版库删除');
+
+    fetch(`http://localhost:3001/api/templates/${tplId}`, {
+      method: 'DELETE',
+    }).catch((err) => console.error('从 SQLite 删除模版失败:', err));
+  };
+
+  const handleUpdateTemplate = (updatedTpl) => {
+    setCustomTemplates((prev) =>
+      prev.map((t) => (t.id === updatedTpl.id ? updatedTpl : t))
+    );
+    // 异步同步到 SQLite
+    fetch('http://localhost:3001/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedTpl),
+    }).catch(() => {});
   };
 
   const handleCheckIn = () => {
@@ -197,8 +278,12 @@ export default function App() {
     setSelectedProduct(matchedProd);
     setExternalImagePrompt(item.prompt);
     if (item.ratio) setExternalImageRatio(item.ratio);
+    const imgs = Array.isArray(item.images) && item.images.length > 0
+      ? item.images
+      : (item.customImageUrl ? [item.customImageUrl] : []);
+    setExternalImages(imgs);
     setActiveTab('image');
-    showToast(`已载入同款模版 (${item.ratio || '3:4'})`);
+    showToast(`已载入同款模版 (${item.ratio || '3:4'}${imgs.length > 0 ? ` · ${imgs.length}张参考图` : ''})`);
   };
 
   const handleMakeSameVideo = (item) => {
@@ -455,6 +540,7 @@ export default function App() {
                 onToggleBookmark={handleToggleBookmark}
                 onOpenCreateTemplate={() => setIsCreateTplOpen(true)}
                 onDeleteTemplate={handleDeleteTemplate}
+                onUpdateTemplate={handleUpdateTemplate}
                 onMakeSameImage={handleMakeSameImage}
                 onMakeSameVideo={handleMakeSameVideo}
                 onAddToast={showToast}
@@ -468,6 +554,7 @@ export default function App() {
                 onSelectProduct={setSelectedProduct}
                 externalPrompt={externalImagePrompt}
                 externalRatio={externalImageRatio}
+                externalImages={externalImages}
                 customTemplates={customTemplates}
                 onOpenCreateTemplate={() => setIsCreateTplOpen(true)}
                 onOpenAddProduct={() => setIsAddProductOpen(true)}
@@ -502,6 +589,13 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'dshTester' && (
+              <DshPluginTesterStudio
+                onMakeSameImage={handleMakeSameImage}
+                onNavigateToTab={setActiveTab}
+                onAddToast={showToast}
+              />
+            )}
 
             {activeTab === 'profile' && (
               <PersonalCenter
