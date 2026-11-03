@@ -23,7 +23,8 @@ import {
   Copy,
   RotateCcw,
   FileText,
-  Layers
+  Layers,
+  Film
 } from 'lucide-react';
 
 const PALETTE = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#65a30d'];
@@ -67,6 +68,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [activeSentenceIndex, setActiveSentenceIndex] = useState(-1);
   const [isCutting, setIsCutting] = useState(false);
+  const [exportingJianyingId, setExportingJianyingId] = useState(null);
 
   // 抽屉与外部状态
   const [cases, setCases] = useState([]);
@@ -460,6 +462,45 @@ export default function VideoSlicerStudio({ onAddToast }) {
       onAddToast && onAddToast(`批量切片失败: ${err.message}`);
     } finally {
       setIsCutting(false);
+    }
+  };
+
+  // 9. 导出剪映原生工程 (走 DSH 微内核 jianying 服务)
+  const handleExportJianying = async (targetClips, customDraftName) => {
+    if (isPipelineLocked) return;
+    const isBatch = targetClips.length > 1;
+    setExportingJianyingId(isBatch ? 'all' : targetClips[0]?.id);
+    try {
+      const draftName =
+        customDraftName ||
+        (isBatch
+          ? `剪映全套_${videoData.fileName.replace(/\.mp4$/i, '')}_${targetClips.length}段高光`
+          : `剪映_${targetClips[0]?.productName || '单品'}_${targetClips[0]?.tag}_${targetClips[0]?.timeRange?.replace(/\s+/g, '')}`);
+
+      const res = await fetch('http://localhost:3001/api/slicer/export-jianying', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: videoData.id,
+          draftName,
+          clips: targetClips,
+          sentences: transcripts.sentences || [],
+          width: videoData.width,
+          height: videoData.height
+        })
+      });
+      const json = await res.json();
+      if (json.code === 0 && json.data) {
+        loadTraces();
+        onAddToast &&
+          onAddToast(`已成功导出剪映工程【${json.data.draftName}】！打开剪映App草稿箱首位即可直接精剪。`);
+      } else {
+        throw new Error(json.error || '导出剪映失败');
+      }
+    } catch (err) {
+      onAddToast && onAddToast(`导出剪映失败: ${err.message}`);
+    } finally {
+      setExportingJianyingId(null);
     }
   };
 
@@ -938,21 +979,40 @@ export default function VideoSlicerStudio({ onAddToast }) {
                             {clip.timeRange} ({clip.durationSeconds}s)
                           </span>
 
-                          <button
-                            disabled={isPipelineLocked || isCutting}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleExportSingle(clip);
-                            }}
-                            className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition ${
-                              isPipelineLocked || isCutting
-                                ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-                                : 'bg-neutral-900 hover:bg-black text-white cursor-pointer active:scale-95'
-                            }`}
-                          >
-                            <Download className="w-3 h-3" />
-                            <span>{isPipelineLocked ? '处理中...' : isCutting ? '裁剪中...' : '导出 MP4'}</span>
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              disabled={isPipelineLocked || exportingJianyingId === clip.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportJianying([clip]);
+                              }}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                                isPipelineLocked || exportingJianyingId === clip.id
+                                  ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 cursor-pointer active:scale-95'
+                              }`}
+                              title="一键将该片段与字幕打包存入剪映草稿箱"
+                            >
+                              <Film className="w-3 h-3 text-blue-600" />
+                              <span>{exportingJianyingId === clip.id ? '写入中...' : '导入剪映'}</span>
+                            </button>
+
+                            <button
+                              disabled={isPipelineLocked || isCutting}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportSingle(clip);
+                              }}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                                isPipelineLocked || isCutting
+                                  ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                                  : 'bg-neutral-900 hover:bg-black text-white cursor-pointer active:scale-95'
+                              }`}
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>{isPipelineLocked ? '处理中...' : isCutting ? '裁剪中...' : '导出 MP4'}</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </React.Fragment>
@@ -1030,25 +1090,46 @@ export default function VideoSlicerStudio({ onAddToast }) {
               </span>
             </div>
 
-            <button
-              id="btnBatchExport"
-              disabled={isPipelineLocked || isCutting || visibleClips.length === 0}
-              onClick={handleExportAll}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition shadow-2xs ${
-                isPipelineLocked || isCutting || visibleClips.length === 0
-                  ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-                  : 'bg-neutral-900 hover:bg-black text-white cursor-pointer active:scale-95 shadow-sm'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>
-                {isPipelineLocked
-                  ? '流水线处理中 (锁定)'
-                  : isCutting
-                  ? '正在物理裁剪...'
-                  : `一键导出全部 ${visibleClips.length} 条切片`}
-              </span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                id="btnBatchExportJianying"
+                disabled={isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0}
+                onClick={() => handleExportJianying(visibleClips)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition shadow-2xs ${
+                  isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0
+                    ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-95 shadow-sm'
+                }`}
+                title="将当前全部高光切片打包为一个剪映多轨时间轴工程"
+              >
+                <Film className="w-3.5 h-3.5" />
+                <span>
+                  {exportingJianyingId === 'all'
+                    ? '写入剪映中...'
+                    : `导出剪映工程 (${visibleClips.length}段)`}
+                </span>
+              </button>
+
+              <button
+                id="btnBatchExport"
+                disabled={isPipelineLocked || isCutting || visibleClips.length === 0}
+                onClick={handleExportAll}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition shadow-2xs ${
+                  isPipelineLocked || isCutting || visibleClips.length === 0
+                    ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                    : 'bg-neutral-900 hover:bg-black text-white cursor-pointer active:scale-95 shadow-sm'
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>
+                  {isPipelineLocked
+                    ? '流水线锁定中'
+                    : isCutting
+                    ? '正在裁剪...'
+                    : `批量下载 MP4`}
+                </span>
+              </button>
+            </div>
           </div>
         </aside>
       </main>

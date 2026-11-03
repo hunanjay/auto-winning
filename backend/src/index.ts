@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { AliyunWanxService } from './plugins/aliyun-wanx.js';
 import { AliyunChatService } from './plugins/aliyun-chat.js';
 import { DshTracerService } from './plugins/dsh-tracer.js';
+import { DshJianyingService } from './plugins/dsh-jianying.js';
 import * as MoneyPrinterSlicerPlugin from './plugins/moneyprinter-slicer.js';
 import * as GptImageStylePlugin from './plugins/gpt-image-style.js';
 import {
@@ -38,6 +39,7 @@ const cordisCtx = new Context();
 new DshTracerService(cordisCtx);
 new AliyunWanxService(cordisCtx, { apiKey });
 new AliyunChatService(cordisCtx, { apiKey, baseUrl, defaultModel });
+new DshJianyingService(cordisCtx);
 
 // 以 DeepSeek Harness 标准规范装配智能切片插件
 cordisCtx.plugin(MoneyPrinterSlicerPlugin, {
@@ -699,6 +701,51 @@ app.post('/api/slicer/cut-all', async (c) => {
     });
   } catch (err: any) {
     console.error('批量切片失败:', err);
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (3.5) 一键导出到剪映草稿工程 (走 DSH 微内核 jianying 插件服务)
+app.post('/api/slicer/export-jianying', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { videoId, clips = [], sentences = [], draftName, width, height } = body;
+
+    const videosDir = path.resolve(__dirname, '../uploads/videos');
+    let inputPath = path.join(videosDir, `${videoId}.mp4`);
+    if (!fs.existsSync(inputPath)) {
+      inputPath = path.join(videosDir, 'sample_livestream.mp4');
+    }
+
+    let w = width;
+    let h = height;
+    if (!w || !h) {
+      try {
+        const probed = await probeVideo(inputPath);
+        w = probed.width;
+        h = probed.height;
+      } catch {
+        w = 1080;
+        h = 1920;
+      }
+    }
+
+    const res = await (cordisCtx as any).jianying.exportDraft({
+      draftName,
+      videoPath: inputPath,
+      width: w,
+      height: h,
+      clips,
+      sentences,
+    });
+
+    return c.json({
+      code: 0,
+      message: '成功导出到剪映草稿箱',
+      data: res,
+    });
+  } catch (err: any) {
+    console.error('导出到剪映草稿失败:', err);
     return c.json({ code: 500, error: err.message }, 500);
   }
 });

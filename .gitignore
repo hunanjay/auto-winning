@@ -35,4 +35,5 @@ backend/uploads/clips/*
 !backend/uploads/clips/.gitkeep
 backend/uploads/audios/*
 backend/uploads/cache/*
-backend/uploads/videos/upload-*
+backend/uploads/videos/*
+!backend/uploads/videos/sample_livestream.mp4
