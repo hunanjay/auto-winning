@@ -82,8 +82,9 @@ export default function VideoPlayerModal({
 
             {/* Bottom Subtitle / Viral Hook Banner */}
             <div className="absolute inset-x-3 bottom-8 z-20 space-y-1.5">
-              <div className="inline-block px-2.5 py-1 rounded-lg bg-red-600/90 backdrop-blur-md text-white text-[11px] font-bold shadow">
-                💡 黄金前3秒转化 Hook
+              <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-600/90 backdrop-blur-md text-white text-[11px] font-bold shadow">
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                <span>黄金前3秒转化 Hook</span>
               </div>
               <p className="text-white text-xs font-semibold leading-relaxed drop-shadow">
                 {videoData.hook || '“今天下单直接多送同款体验装，数量有限手慢无！”'}

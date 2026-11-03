@@ -13,7 +13,8 @@ import {
   Link2,
   Maximize2,
   Flame,
-  Volume2
+  Volume2,
+  Sparkles
 } from 'lucide-react';
 import { VIDEO_FEED } from '../data/mockData';
 import ProductArtwork from './ProductArtwork';
@@ -127,8 +128,9 @@ export default function VideoStudio({
                 </button>
 
                 <div className="absolute inset-x-0 bottom-0 p-3.5 bg-gradient-to-t from-black/75 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end gap-2 z-20">
-                  <div className="text-[10px] text-amber-300 font-bold truncate">
-                    💡 {vid.hook || '带货黄金前3秒'}
+                  <div className="text-[10px] text-amber-300 font-bold truncate flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
+                    <span className="truncate">{vid.hook || '带货黄金前3秒'}</span>
                   </div>
                   <p className="text-[11px] text-white/95 line-clamp-1 leading-relaxed">
                     {vid.prompt}
