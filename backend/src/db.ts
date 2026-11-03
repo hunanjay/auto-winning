@@ -42,6 +42,17 @@ db.exec(`
     custom_image_url TEXT,
     created_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS slicer_cases (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    video_file TEXT NOT NULL,
+    duration INTEGER,
+    product_count INTEGER DEFAULT 0,
+    clip_count INTEGER DEFAULT 0,
+    result_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 console.log(`📦 [SQLite DB] 数据库已就绪: ${dbPath}`);
@@ -232,5 +243,50 @@ export const ProductDao = {
     const stmt = db.prepare('DELETE FROM custom_products WHERE id = ?');
     stmt.run(id);
     return true;
+  },
+};
+
+
+export interface SlicerCaseRow {
+  id: string;
+  name: string;
+  video_file: string;
+  duration: number;
+  product_count: number;
+  clip_count: number;
+  result_json: string;
+  created_at: number;
+}
+
+export const SlicerCaseDao = {
+  save(row: { id: string; name: string; videoFile: string; result: any }) {
+    db.prepare(
+      `INSERT OR REPLACE INTO slicer_cases
+       (id, name, video_file, duration, product_count, clip_count, result_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      row.id,
+      row.name,
+      row.videoFile,
+      row.result.durationSeconds ?? 0,
+      row.result.products?.length ?? 0,
+      row.result.clips?.length ?? 0,
+      JSON.stringify(row.result),
+      Date.now()
+    );
+  },
+  list(): Omit<SlicerCaseRow, 'result_json'>[] {
+    return db
+      .prepare(
+        `SELECT id, name, video_file, duration, product_count, clip_count, created_at
+         FROM slicer_cases ORDER BY created_at DESC`
+      )
+      .all() as any;
+  },
+  get(id: string): SlicerCaseRow | undefined {
+    return db.prepare(`SELECT * FROM slicer_cases WHERE id = ?`).get(id) as any;
+  },
+  remove(id: string) {
+    db.prepare(`DELETE FROM slicer_cases WHERE id = ?`).run(id);
   },
 };

@@ -18,7 +18,9 @@ import {
   Mic,
   Cpu,
   Loader2,
-  Check
+  Check,
+  FolderOpen,
+  Trash2
 } from 'lucide-react';
 
 export default function VideoSlicerStudio({ onAddToast }) {
@@ -89,6 +91,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
     }
   ]);
 
+  const [cases, setCases] = useState([]);
+  const [casesOpen, setCasesOpen] = useState(false);
   const [products, setProducts] = useState([]);
   const [productFilter, setProductFilter] = useState(-1); // -1 = 全部产品
   const [activeClip, setActiveClip] = useState(clips[0]);
@@ -133,6 +137,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
       })
       .catch(() => {});
 
+    loadCases();
+
     // 检查 MoneyPrinter 引擎状态
     fetch('http://localhost:3001/api/slicer/status')
       .then((r) => r.json())
@@ -143,6 +149,43 @@ export default function VideoSlicerStudio({ onAddToast }) {
       })
       .catch(() => {});
   }, []);
+
+  // 案例库：拉取 / 载入 / 删除
+  const loadCases = () =>
+    fetch('http://localhost:3001/api/slicer/cases')
+      .then((r) => r.json())
+      .then((res) => res.code === 0 && setCases(res.data))
+      .catch(() => {});
+
+  const applyAnalysis = (data) => {
+    setVideoData(data.video);
+    if (data.transcripts) setTranscripts(data.transcripts);
+    setProducts(data.products || []);
+    setProductFilter(-1);
+    if (data.clips?.length) {
+      setClips(data.clips);
+      setActiveClip(data.clips[0]);
+    }
+    setIsPlaying(false);
+    setCurrentTime(0);
+  };
+
+  const handleOpenCase = async (id) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/slicer/cases/${encodeURIComponent(id)}`).then((r) => r.json());
+      if (res.code === 0) {
+        applyAnalysis(res.data);
+        setCasesOpen(false);
+      }
+    } catch (err) {
+      onAddToast && onAddToast(`载入案例失败: ${err.message}`);
+    }
+  };
+
+  const handleDeleteCase = async (id) => {
+    await fetch(`http://localhost:3001/api/slicer/cases/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    loadCases();
+  };
 
   // 2. 选择切片时，播放器立即精确定位到该切片的起始时间点并播放
   const handleSelectClip = (clip) => {
@@ -236,6 +279,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
           setClips(json.data.clips);
           setActiveClip(json.data.clips[0]);
         }
+        loadCases();
         onAddToast && onAddToast(`已完成语音转文字及 Qwen 智能高光拆条分析，探测到 ${json.data.clips.length} 个转化高光段`);
       } else {
         throw new Error(json.error || '视频解析失败');
@@ -395,7 +439,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
       )}
 
       {/* 顶部工具栏与架构指示 */}
-      <header className="h-14 border-b border-neutral-200/80 bg-white/90 backdrop-blur px-6 flex items-center justify-between shrink-0 z-10">
+      <header className="min-h-14 py-2 gap-y-2 flex-wrap border-b border-neutral-200/80 bg-white/90 backdrop-blur px-6 flex items-center justify-between shrink-0 z-10 [&_button]:whitespace-nowrap [&_a]:whitespace-nowrap [&_span]:whitespace-nowrap">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-xs text-neutral-500 font-medium">
             <span>识别模式：</span>
@@ -437,6 +481,45 @@ export default function VideoSlicerStudio({ onAddToast }) {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="relative">
+            <button
+              onClick={() => { setCasesOpen(!casesOpen); loadCases(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>案例库 ({cases.length})</span>
+            </button>
+            {casesOpen && (
+              <div className="absolute right-0 top-full mt-2 w-[360px] max-h-[420px] overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-xl z-40 p-2">
+                {cases.length === 0 && (
+                  <div className="p-4 text-xs text-neutral-400 text-center">暂无案例，导入视频分析后会自动保存</div>
+                )}
+                {cases.map((cs) => (
+                  <div
+                    key={cs.id}
+                    onClick={() => handleOpenCase(cs.id)}
+                    className={`group flex items-start justify-between gap-2 p-3 rounded-lg cursor-pointer hover:bg-neutral-50 ${videoData.id === cs.id ? 'bg-neutral-50 ring-1 ring-neutral-200' : ''}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-neutral-900 truncate">{cs.name}</div>
+                      <div className="mt-1 text-[11px] text-neutral-400">
+                        {cs.product_count} 个产品 / {cs.clip_count} 条切片 / {Math.floor(cs.duration / 60)}分{cs.duration % 60}秒
+                      </div>
+                      <div className="text-[11px] text-neutral-300">{new Date(cs.created_at).toLocaleString()}</div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteCase(cs.id); }}
+                      className="p-1 rounded text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="删除案例"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <a
             href={serverStatus.webuiUrl}
             target="_blank"

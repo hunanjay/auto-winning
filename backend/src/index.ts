@@ -17,7 +17,7 @@ import {
   cutVideoClip,
   probeVideo,
 } from './services/video-asr-cutter.js';
-import { TemplateDao, ProductDao } from './db.js';
+import { TemplateDao, ProductDao, SlicerCaseDao } from './db.js';
 
 // 1. 双重环境配置加载：优先读取项目根目录的 .env.local，其次读取 backend/.env
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -305,6 +305,48 @@ app.get('/uploads/*', async (c) => {
   });
 });
 
+// 将分析结果整理为前端所需的响应结构
+function buildSlicerResponse(fileId: string, originalName: string, savedFilePath: string, videoUrl: string, r: any) {
+  const fmt = (s: number) => {
+    const m = Math.floor(s / 60).toString().padStart(2, '0');
+    const sec = Math.floor(s % 60).toString().padStart(2, '0');
+    return `${m}:${sec}`;
+  };
+  return {
+    video: {
+      id: fileId,
+      fileName: originalName,
+      filePath: savedFilePath,
+      videoUrl,
+      duration: r.durationSeconds,
+      durationFormatted: fmt(r.durationSeconds),
+      width: r.width,
+      height: r.height,
+      ratio: `${r.width}:${r.height}`,
+    },
+    transcripts: r.transcripts,
+    products: r.products || [],
+    clips: r.clips,
+  };
+}
+
+// 案例库：列表 / 读取 / 删除
+app.get('/api/slicer/cases', (c) => c.json({ code: 0, data: SlicerCaseDao.list() }));
+
+app.get('/api/slicer/cases/:id', (c) => {
+  const row = SlicerCaseDao.get(c.req.param('id'));
+  if (!row) return c.json({ code: 404, error: '案例不存在' }, 404);
+  const r = JSON.parse(row.result_json);
+  const videoPath = path.resolve(__dirname, '../uploads/videos', row.video_file);
+  const videoUrl = `http://localhost:${port}/uploads/videos/${encodeURIComponent(row.video_file)}`;
+  return c.json({ code: 0, data: buildSlicerResponse(row.id, row.name, videoPath, videoUrl, r) });
+});
+
+app.delete('/api/slicer/cases/:id', (c) => {
+  SlicerCaseDao.remove(c.req.param('id'));
+  return c.json({ code: 0 });
+});
+
 // 分析进度 (内存态，供前端轮询展示 Loading 步骤)
 const slicerProgress = new Map<string, { step: number; label: string; done: boolean }>();
 app.get('/api/slicer/progress/:jobId', (c) => {
@@ -365,7 +407,12 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
       try {
         const cached = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
         // 旧版缓存 (无产品分段) 视为失效
-        if (cached.products) analysisResult = cached;
+        if (cached.products) {
+          analysisResult = cached;
+          if (!SlicerCaseDao.get(fileId)) {
+            SlicerCaseDao.save({ id: fileId, name: originalName, videoFile: savedFileName, result: cached });
+          }
+        }
       } catch {
         // 缓存失效则重新执行
       }
@@ -382,6 +429,8 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
       );
       // 写入持久化缓存
       fs.writeFileSync(cachePath, JSON.stringify(analysisResult, null, 2), 'utf-8');
+      // 存入数据库案例库，可作为 Demo 长期保留
+      SlicerCaseDao.save({ id: fileId, name: originalName, videoFile: savedFileName, result: analysisResult });
     }
 
     if (jobId) {
