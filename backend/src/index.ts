@@ -305,6 +305,13 @@ app.get('/uploads/*', async (c) => {
   });
 });
 
+// 分析进度 (内存态，供前端轮询展示 Loading 步骤)
+const slicerProgress = new Map<string, { step: number; label: string; done: boolean }>();
+app.get('/api/slicer/progress/:jobId', (c) => {
+  const p = slicerProgress.get(c.req.param('jobId'));
+  return c.json({ code: 0, data: p || { step: 0, label: '排队中', done: false } });
+});
+
 // (1) 上传长视频并进行真实 ASR 语音识别 + Qwen 语义高光切片
 app.post('/api/slicer/upload-and-analyze', async (c) => {
   try {
@@ -317,12 +324,14 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
     let originalName = 'sample_livestream.mp4';
     let fileId = `vid-${Date.now()}`;
     let isUpload = false;
+    let jobId = '';
 
     // 处理 multipart/form-data 或默认示例
     const contentType = c.req.header('content-type') || '';
     if (contentType.includes('multipart/form-data')) {
       const formData = await c.req.parseBody();
       const videoFile = formData['video'] as any;
+      jobId = String(formData['jobId'] || '');
 
       if (videoFile && typeof videoFile === 'object' && videoFile.name) {
         originalName = videoFile.name;
@@ -368,10 +377,16 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
         savedFilePath,
         fileId,
         originalName,
-        videoUrl
+        videoUrl,
+        (step, label) => { if (jobId) slicerProgress.set(jobId, { step, label, done: false }); }
       );
       // 写入持久化缓存
       fs.writeFileSync(cachePath, JSON.stringify(analysisResult, null, 2), 'utf-8');
+    }
+
+    if (jobId) {
+      slicerProgress.set(jobId, { step: 5, label: '完成', done: true });
+      setTimeout(() => slicerProgress.delete(jobId), 60000);
     }
 
     const fmt = (s: number) => {

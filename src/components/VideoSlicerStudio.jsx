@@ -16,7 +16,9 @@ import {
   FileText,
   Activity,
   Mic,
-  Cpu
+  Cpu,
+  Loader2,
+  Check
 } from 'lucide-react';
 
 export default function VideoSlicerStudio({ onAddToast }) {
@@ -93,6 +95,9 @@ export default function VideoSlicerStudio({ onAddToast }) {
   const [activeTab, setActiveTab] = useState('clips'); // 'clips' | 'transcripts'
   const [activeRules, setActiveRules] = useState(['语音破价锚点', '微距特写帧', '加购波峰']);
   const [isUploading, setIsUploading] = useState(false);
+  const [progressStep, setProgressStep] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const ANALYZE_STEPS = ['探测视频信息', '提取音频', '上传音频', '语音转文字', '识别产品并规划切片'];
   const [isCutting, setIsCutting] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -105,6 +110,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
   });
 
   const fileInputRef = useRef(null);
+  const progressTimerRef = useRef(null);
   const videoRef = useRef(null);
 
   // 1. 初始化时向后端拉取真实 ASR + Qwen 高光分析数据
@@ -196,7 +202,21 @@ export default function VideoSlicerStudio({ onAddToast }) {
 
     setIsUploading(true);
     try {
+      const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setProgressStep(0);
+      setElapsed(0);
+      const startedAt = Date.now();
+      const timer = setInterval(async () => {
+        setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+        try {
+          const pr = await fetch(`http://localhost:3001/api/slicer/progress/${jobId}`).then((r) => r.json());
+          if (pr.code === 0) setProgressStep(pr.data.step);
+        } catch {}
+      }, 1000);
+      progressTimerRef.current = timer;
+
       const formData = new FormData();
+      formData.append('jobId', jobId);
       formData.append('video', file);
 
       const res = await fetch('http://localhost:3001/api/slicer/upload-and-analyze', {
@@ -224,7 +244,9 @@ export default function VideoSlicerStudio({ onAddToast }) {
       console.error('上传视频解析错误:', err);
       onAddToast && onAddToast(`视频解析失败: ${err.message}`);
     } finally {
+      clearInterval(progressTimerRef.current);
       setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -332,7 +354,46 @@ export default function VideoSlicerStudio({ onAddToast }) {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#fcfcfd] overflow-hidden text-neutral-800">
+    <div className="relative flex-1 flex flex-col h-full bg-[#fcfcfd] overflow-hidden text-neutral-800">
+      {/* 导入分析 Loading 浮层 */}
+      {isUploading && (
+        <div className="absolute inset-0 z-50 flex items-start justify-center pt-40 bg-white/70 backdrop-blur-sm">
+          <div className="w-[380px] rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-5">
+              <Loader2 className="w-5 h-5 animate-spin text-neutral-900" />
+              <div>
+                <div className="text-sm font-semibold text-neutral-900">正在分析视频</div>
+                <div className="text-xs text-neutral-400">已用时 {elapsed}s，长视频可能需要几分钟，请勿关闭页面</div>
+              </div>
+            </div>
+            <div className="h-1.5 rounded-full bg-neutral-100 overflow-hidden mb-5">
+              <div
+                className="h-full bg-neutral-900 transition-all duration-700"
+                style={{ width: `${Math.min(95, ((progressStep + 0.5) / ANALYZE_STEPS.length) * 100)}%` }}
+              />
+            </div>
+            <ul className="space-y-2.5">
+              {ANALYZE_STEPS.map((label, i) => {
+                const done = i < progressStep;
+                const current = i === progressStep;
+                return (
+                  <li key={label} className={`flex items-center gap-2.5 text-xs ${done || current ? 'text-neutral-900' : 'text-neutral-300'}`}>
+                    {done ? (
+                      <Check className="w-4 h-4 text-emerald-600" />
+                    ) : current ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <span className="w-4 h-4 rounded-full border border-neutral-200" />
+                    )}
+                    <span className={current ? 'font-medium' : ''}>{label}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* 顶部工具栏与架构指示 */}
       <header className="h-14 border-b border-neutral-200/80 bg-white/90 backdrop-blur px-6 flex items-center justify-between shrink-0 z-10">
         <div className="flex items-center gap-3">

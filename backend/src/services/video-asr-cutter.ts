@@ -448,18 +448,23 @@ export async function runFullASRWorkflow(
   videoPath: string,
   videoId: string,
   fileName: string,
-  videoUrl: string
+  videoUrl: string,
+  onProgress: (step: number, label: string) => void = () => {}
 ): Promise<VideoAnalysisResult> {
   // Step 1: probe 视频时长和分辨率
+  onProgress(0, '探测视频信息');
   const { duration, width, height } = await probeVideo(videoPath);
 
   // Step 2: FFmpeg 提取音频
+  onProgress(1, '提取音频');
   const audioDir = path.resolve(path.dirname(videoPath), '../audios');
   const audioPath = path.resolve(audioDir, `${path.basename(videoPath, path.extname(videoPath))}.mp3`);
   await extractAudioFromVideo(videoPath, audioPath);
 
   // Step 3: 上传音频至阿里云 OSS
+  onProgress(2, '上传音频');
   const audioOssUrl = await uploadAudioToOSS(audioPath);
+  onProgress(3, '语音转文字');
   console.log(`音频已上传至 OSS: ${audioOssUrl}`);
   const transcripts = await transcribeWithParaformer(audioOssUrl);
   console.log(`Paraformer 语音识别完成，共识别出 ${transcripts.sentences.length} 句字幕`);
@@ -467,6 +472,7 @@ export async function runFullASRWorkflow(
     throw new Error('未识别到任何口播内容，无法按产品切片');
   }
 
+  onProgress(4, '识别产品并规划切片');
   // Step 5: 两阶段分析 (产品分段 -> 逐产品按环节切片)
   const { products, clips } = await analyzeProductsAndClips(transcripts.sentences, duration);
 
