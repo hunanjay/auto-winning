@@ -62,13 +62,13 @@ export class AliyunWanxService {
 
     const count = Math.min(Math.max(n, 1), 4);
     const generateSingle = async (variantIdx: number): Promise<string> => {
-      const lightingAngles = [
-        '主视觉柔光棚拍视角',
-        '午后暖调侧逆光微距质感',
-        '高奢轮廓光景深特写',
-        '自然漫反射呼吸感构图',
+      const shotRoles = [
+        '电商主图视角：首屏高转化商业棚拍主视觉，主体居中突出，高级柔光与真实接触阴影',
+        '详情页首屏海报图：生活化高奢场景构图，午后暖调侧逆光，预留自然视觉呼吸感与高级氛围',
+        '详情页材质细节图：近距离微距特写视角，重点展现产品表面材质肌理、边缘倒角与高光反光细节',
+        '辅图种草场景视角：多角度陈列构图，搭配极简美学道具，柔和漫反射光影',
       ];
-      const fullPrompt = `${instruction}（光影风格：${lightingAngles[variantIdx % lightingAngles.length]}）`;
+      const fullPrompt = `${instruction}（本张套图定位：${shotRoles[variantIdx % shotRoles.length]}）`;
 
       const messageContent: Array<{ image?: string; text?: string }> = [{ image: baseImageUrl }];
       if (logoImageUrl) {
