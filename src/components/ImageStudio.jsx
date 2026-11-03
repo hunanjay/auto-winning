@@ -453,7 +453,7 @@ export default function ImageStudio({
           </section>
 
           {/* 2. 画面描述 */}
-          <section className="space-y-2.5">
+          <section className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-semibold text-slate-900 tracking-tight">
                 画面描述
@@ -461,29 +461,32 @@ export default function ImageStudio({
               <button
                 onClick={handleAiPolishPrompt}
                 disabled={isAiWriting}
-                className="px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
               >
-                <Sparkles className={`w-3 h-3 ${isAiWriting ? 'animate-spin' : ''}`} />
-                {isAiWriting ? '润色中' : 'AI 润色'}
+                <Sparkles className={`w-3.5 h-3.5 text-indigo-500 ${isAiWriting ? 'animate-spin' : ''}`} />
+                <span>{isAiWriting ? 'AI 润色中...' : 'AI 润色'}</span>
               </button>
             </div>
 
-            <div className="relative rounded-xl bg-slate-50/70 hover:bg-slate-50 focus-within:bg-white border border-slate-200/70 focus-within:border-slate-900 p-3 transition">
+            <div className="relative rounded-2xl bg-slate-50/70 hover:bg-slate-50 focus-within:bg-white border border-slate-200/80 focus-within:border-slate-900 p-3.5 transition shadow-2xs">
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                rows={4}
-                placeholder="描述场景、光影或 Logo 印制位置..."
-                className="w-full bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
+                rows={6}
+                placeholder="详细描述想要的商拍场景、光影氛围或 Logo 印制位置（例如：放置在北美黑胡桃木办公桌上，午后百叶窗柔和暖光，旁边有咖啡杯，大师级商业摄影真实质感）..."
+                className="w-full min-h-[130px] bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none resize-none leading-relaxed"
               />
-              {prompt && (
-                <button
-                  onClick={() => setPrompt('')}
-                  className="absolute bottom-2.5 right-2.5 text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  清空
-                </button>
-              )}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-[11px] text-slate-400">
+                <span>{prompt.length ? `${prompt.length} 字` : '支持文字直接指定主体与场景'}</span>
+                {prompt && (
+                  <button
+                    onClick={() => setPrompt('')}
+                    className="hover:text-slate-700 cursor-pointer font-medium"
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-1.5">
@@ -491,9 +494,9 @@ export default function ImageStudio({
                 <button
                   key={sc.label}
                   onClick={() => setPrompt(sc.text)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100/70 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900 text-[11px] transition cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100/80 hover:bg-slate-200/80 text-slate-600 hover:text-slate-900 text-xs transition cursor-pointer"
                 >
-                  {sc.label}
+                  + {sc.label}
                 </button>
               ))}
             </div>
