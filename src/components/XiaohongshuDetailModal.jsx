@@ -11,10 +11,10 @@ import {
   Check,
   Heart,
   Bookmark,
-  Share2,
-  Tag,
   ImageIcon,
-  Maximize2
+  Quote,
+  Terminal,
+  BadgeCheck
 } from 'lucide-react';
 import ProductArtwork from './ProductArtwork';
 
@@ -45,7 +45,6 @@ export default function XiaohongshuDetailModal({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedHook, setCopiedHook] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
   const fileInputRef = useRef(null);
 
   // 快捷键支持：ESC 关闭，左/右箭头切图
@@ -70,7 +69,7 @@ export default function XiaohongshuDetailModal({
     setCurrentIndex(0);
   }, [item.id]);
 
-  // 处理多图上传 (支持一次选择多张图片并自动光栅化/转 base64)
+  // 处理多图上传 (支持一次选择多张图片并自动转 base64)
   const handleAddImages = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -89,7 +88,6 @@ export default function XiaohongshuDetailModal({
         if (loadedCount === files.length) {
           setImages((prev) => {
             const nextList = [...prev, ...newUrls];
-            // 同步通知外部模版更新
             if (onUpdateTemplate) {
               onUpdateTemplate({
                 ...item,
@@ -99,7 +97,7 @@ export default function XiaohongshuDetailModal({
             }
             return nextList;
           });
-          setCurrentIndex(images.length); // 切换至最新上传的第一张
+          setCurrentIndex(images.length);
           onAddToast && onAddToast(`已添加 ${newUrls.length} 张图片，当前共 ${images.length + newUrls.length} 张`);
         }
       };
@@ -112,7 +110,6 @@ export default function XiaohongshuDetailModal({
   // 删除单张图片 (编辑图片数量)
   const handleDeleteImage = (indexToDelete) => {
     if (images.length <= 1) {
-      // 允许删除但给出提示
       const confirmed = window.confirm('删除后模版将没有图片，确定要移除这张图片吗？');
       if (!confirmed) return;
     }
@@ -149,7 +146,7 @@ export default function XiaohongshuDetailModal({
     onAddToast && onAddToast('已设为模版首图封面');
   };
 
-  // 复制提示词
+  // 复制提示词 (无 emoji)
   const handleCopyPrompt = () => {
     if (!item.prompt) return;
     navigator.clipboard.writeText(item.prompt);
@@ -158,13 +155,19 @@ export default function XiaohongshuDetailModal({
     onAddToast && onAddToast('已复制电商生图提示词');
   };
 
-  // 复制黄金文案
+  // 复制黄金文案 (无 emoji)
   const handleCopyHook = () => {
     if (!item.hook) return;
     navigator.clipboard.writeText(item.hook);
     setCopiedHook(true);
     setTimeout(() => setCopiedHook(false), 2000);
-    onAddToast && onAddToast('已复制黄金前3秒 Hook 话术');
+    onAddToast && onAddToast('已复制黄金前3秒爆款文案');
+  };
+
+  // 过滤文案中的所有 emoji 字符，确保 100% 纯净
+  const cleanText = (str) => {
+    if (!str) return '';
+    return str.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
   };
 
   // 构造带有最新多图的模版对象传递给生图
@@ -196,7 +199,6 @@ export default function XiaohongshuDetailModal({
         <div className="md:w-[58%] h-1/2 md:h-full bg-[#0E1015] flex flex-col justify-between relative overflow-hidden shrink-0">
           {/* 顶部工具条：多图计数胶囊与多图管理 */}
           <div className="h-14 px-5 flex items-center justify-between z-20">
-            {/* 多图计数指示器 */}
             {images.length > 0 ? (
               <div className="px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-white text-xs font-semibold tracking-wider font-mono">
                 {currentIndex + 1} / {images.length}
@@ -211,14 +213,15 @@ export default function XiaohongshuDetailModal({
                 <button
                   onClick={() => handleSetAsCover(currentIndex)}
                   disabled={currentIndex === 0}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer backdrop-blur-md ${
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer backdrop-blur-md flex items-center gap-1 ${
                     currentIndex === 0
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                       : 'bg-white/10 hover:bg-white/20 text-slate-200'
                   }`}
                   title={currentIndex === 0 ? '当前即为封面首图' : '将此图设为封面'}
                 >
-                  {currentIndex === 0 ? '✓ 封面首图' : '设为封面'}
+                  {currentIndex === 0 && <Check className="w-3 h-3 text-emerald-400" />}
+                  <span>{currentIndex === 0 ? '封面首图' : '设为封面'}</span>
                 </button>
               )}
 
@@ -232,7 +235,7 @@ export default function XiaohongshuDetailModal({
                 </button>
               )}
 
-              {/* + 上传多图 */}
+              {/* 上传多图 */}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="px-2.5 py-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1 transition cursor-pointer shadow-xs"
@@ -289,7 +292,7 @@ export default function XiaohongshuDetailModal({
                     setCurrentIndex((prev) => (prev > 0 ? prev - 1 : images.length - 1))
                   }
                   className="absolute left-3 w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center transition cursor-pointer backdrop-blur-sm"
-                  title="上一张 (←)"
+                  title="上一张"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
@@ -298,7 +301,7 @@ export default function XiaohongshuDetailModal({
                     setCurrentIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0))
                   }
                   className="absolute right-3 w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center transition cursor-pointer backdrop-blur-sm"
-                  title="下一张 (→)"
+                  title="下一张"
                 >
                   <ChevronRight className="w-5 h-5" />
                 </button>
@@ -324,7 +327,6 @@ export default function XiaohongshuDetailModal({
                     封面
                   </span>
                 )}
-                {/* 悬浮小红叉可直接删 */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -338,7 +340,6 @@ export default function XiaohongshuDetailModal({
               </div>
             ))}
 
-            {/* 缩略图列表最末尾的「+」添加按钮 */}
             <button
               onClick={() => fileInputRef.current?.click()}
               className="aspect-square h-12 rounded-lg border border-dashed border-white/30 hover:border-indigo-400 bg-white/5 hover:bg-white/10 flex flex-col items-center justify-center text-slate-300 hover:text-white transition cursor-pointer shrink-0 gap-0.5"
@@ -350,9 +351,9 @@ export default function XiaohongshuDetailModal({
           </div>
         </div>
 
-        {/* ===================== 右侧：小红书经典笔记详情流 ===================== */}
+        {/* ===================== 右侧：小红书笔记流详情 (纯净无 Emoji) ===================== */}
         <div className="md:w-[42%] flex-1 flex flex-col h-1/2 md:h-full bg-white min-h-0">
-          {/* 1. 顶部博主/创作者卡片 (小红书 Header) */}
+          {/* 1. 博主卡片：作者头像、创作者标识、画幅比例、一键收藏/取消收藏 */}
           <div className="h-16 px-6 border-b border-slate-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-rose-500 via-pink-500 to-indigo-500 p-0.5 shrink-0">
@@ -365,17 +366,18 @@ export default function XiaohongshuDetailModal({
                   <span className="text-xs font-bold text-slate-900 truncate">
                     {item.isCustom ? '我的创作模版' : item.sourceLabel || '爆款视觉研究社'}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-600">
-                    优质创作者
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-600 flex items-center gap-0.5">
+                    <BadgeCheck className="w-3 h-3" />
+                    <span>优质创作者</span>
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-400">
+                <div className="text-[11px] text-slate-400 font-medium">
                   {item.category} · {item.ratio || '3:4'} 黄金商拍画幅
                 </div>
               </div>
             </div>
 
-            {/* 收藏 / 点赞 */}
+            {/* 一键收藏 / 取消收藏 */}
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => {
@@ -394,39 +396,40 @@ export default function XiaohongshuDetailModal({
             </div>
           </div>
 
-          {/* 2. 中间滚动详情正文 (小红书 Note Body) */}
+          {/* 2. 详情正文流 */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
             {/* 标题 */}
             <h2 className="text-base font-extrabold text-slate-900 leading-snug tracking-tight">
-              {item.title}
+              {cleanText(item.title)}
             </h2>
 
-            {/* 黄金前 3 秒 Hook 话术 (小红书风高光便签) */}
+            {/* 黄金前3秒爆款文案 (小红书便签气泡卡片，绝无 Emoji) */}
             {item.hook && (
-              <div className="rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/60 border border-amber-200/60 p-4 space-y-2">
+              <div className="rounded-2xl bg-amber-50/70 border border-amber-200/70 p-4 space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-amber-900">
-                  <span className="flex items-center gap-1">
-                    <span>📌</span> 黄金前3秒爆款文案
+                  <span className="flex items-center gap-1.5">
+                    <Quote className="w-3.5 h-3.5 text-amber-600" />
+                    <span>黄金前3秒爆款文案</span>
                   </span>
                   <button
                     onClick={handleCopyHook}
-                    className="text-[11px] text-amber-700 hover:text-amber-900 flex items-center gap-1 cursor-pointer font-medium"
+                    className="text-[11px] text-amber-800 hover:text-amber-950 flex items-center gap-1 cursor-pointer font-medium"
                   >
                     {copiedHook ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                     <span>{copiedHook ? '已复制' : '复制文案'}</span>
                   </button>
                 </div>
                 <p className="text-xs text-amber-950 font-medium leading-relaxed">
-                  {item.hook}
+                  {cleanText(item.hook)}
                 </p>
               </div>
             )}
 
-            {/* 反推电商生图提示词 (Prompt) */}
+            {/* 反推电商生图提示词 (代码级样式展示，绝无 Emoji) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                 <span className="flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                  <Terminal className="w-3.5 h-3.5 text-indigo-600" />
                   <span>反推电商生图提示词</span>
                 </span>
                 <button
@@ -438,19 +441,20 @@ export default function XiaohongshuDetailModal({
                 </button>
               </div>
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 leading-relaxed font-mono select-text">
-                {item.prompt || '暂无详细提示词'}
+                {cleanText(item.prompt) || '暂无详细提示词'}
               </div>
             </div>
 
-            {/* 标签列表 (小红书同款 Tag 药丸) */}
+            {/* 小红书 Tag 药丸：自动提取分类与画幅标签 (绝无 Emoji) */}
             <div className="space-y-1.5">
-              <div className="text-[11px] font-semibold text-slate-400">标签主题</div>
+              <div className="text-[11px] font-semibold text-slate-400">分类标签</div>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  `#${item.category || '爆款电商'}`,
+                  `#小红书爆款`,
                   `#${item.ratio || '3:4'}比例`,
                   `#${images.length}图图文`,
-                  ...(item.tags ? item.tags.map((t) => `#${t}`) : ['#商业静物摄影', '#视觉设计'])
+                  `#${item.category || '爆款电商'}`,
+                  ...(item.tags ? item.tags.map((t) => `#${cleanText(t)}`) : ['#商业静物摄影', '#视觉设计'])
                 ].map((tag, i) => (
                   <span
                     key={i}
@@ -462,7 +466,7 @@ export default function XiaohongshuDetailModal({
               </div>
             </div>
 
-            {/* 真实数据指标 (点赞、留存) */}
+            {/* 真实数据指标 */}
             <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
               <span className="flex items-center gap-1.5">
                 <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
@@ -473,7 +477,7 @@ export default function XiaohongshuDetailModal({
             </div>
           </div>
 
-          {/* 3. 底部固定转化按钮 (Sticky CTA) */}
+          {/* 3. 底部固定转化按钮：一键做同款全链路贯通 (绝无 Emoji) */}
           <div className="p-4 border-t border-slate-100 bg-white/95 backdrop-blur-md flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => {
@@ -494,7 +498,7 @@ export default function XiaohongshuDetailModal({
               className="h-11 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center gap-1 transition active:scale-[0.99] cursor-pointer"
             >
               <Video className="w-4 h-4" />
-              <span>生视频</span>
+              <span>生成带货视频</span>
             </button>
           </div>
         </div>
