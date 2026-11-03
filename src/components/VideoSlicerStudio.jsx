@@ -759,11 +759,11 @@ export default function VideoSlicerStudio({ onAddToast }) {
               )}
             </div>
 
-            {/* 独立放置在视频窗口正下方的时间戳与控制条 */}
-            <div className="flex flex-col gap-1.5 px-3.5 py-2.5 rounded-xl bg-neutral-900 text-white shadow-xs">
-              {/* 交互进度条 (支持快速 Seek 跳转) */}
+            {/* 独立放置在视频窗口正下方的时间戳与时空热度时序控制条 */}
+            <div className="flex flex-col gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 text-white shadow-xs">
+              {/* 多产品时空热度分段时序轨 (嵌入时间戳进度条中，纯净无文字title，随视频播放指示进度) */}
               <div
-                className="h-1.5 w-full bg-neutral-700/80 hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative"
+                className="relative h-2.5 w-full bg-neutral-800 rounded-full overflow-hidden cursor-pointer transition-all hover:h-3.5 group/timeline"
                 onClick={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -773,12 +773,56 @@ export default function VideoSlicerStudio({ onAddToast }) {
                     setCurrentTime(target);
                   }
                 }}
-                title="点击进度条跳转播放位置"
+                title="时空热度分布时序轨：点击跳转播放"
               >
+                {/* 轨 1: 产品分段色带 (纯净色块无标题，hover展示对应单品) */}
+                {products.length === 0 ? (
+                  <div className="absolute inset-0 bg-neutral-700/60" />
+                ) : (
+                  products.map((p) => (
+                    <div
+                      key={p.index}
+                      className="absolute top-0 bottom-0 transition-opacity hover:brightness-125"
+                      style={{
+                        left: `${p.startPct}%`,
+                        width: `${p.widthPct}%`,
+                        backgroundColor: colorOf(p.index),
+                        opacity: productFilter < 0 || productFilter === p.index ? 0.85 : 0.25
+                      }}
+                      title={`单品：${p.name} (${p.sellingPoints || '热卖中'})`}
+                    />
+                  ))
+                )}
+
+                {/* 轨 2: 细分环节高光切片指示色块 (半透明浮动层，hover展示切片高光详情) */}
+                {visibleClips.map((clip) => {
+                  const isSelected = activeClip?.id === clip.id;
+                  return (
+                    <div
+                      key={clip.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCardClick(clip);
+                      }}
+                      className={`absolute top-0 bottom-0 rounded-xs transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-white z-10 shadow-xs ring-1 ring-white'
+                          : 'bg-white/40 hover:bg-white/80 hover:z-10'
+                      }`}
+                      style={{
+                        left: `${clip.startPct}%`,
+                        width: `${clip.widthPct}%`
+                      }}
+                      title={`高光「${clip.tag}」: ${clip.productName || ''} (${clip.timeRange})`}
+                    />
+                  );
+                })}
+
+                {/* 播放进度指针 (Playhead 白线，平滑随视频流动) */}
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-100"
+                  className="absolute top-0 bottom-0 bg-white w-1 -ml-0.5 z-20 pointer-events-none shadow-sm"
                   style={{
-                    width: `${videoData.duration ? (currentTime / videoData.duration) * 100 : 0}%`
+                    left: `${videoData.duration ? (currentTime / videoData.duration) * 100 : 0}%`
                   }}
                 />
               </div>
@@ -826,7 +870,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
                     </span>
                   ) : (
                     <span className="text-neutral-400 font-mono text-[10px]">
-                      {isStreaming ? '流水线解析中...' : '点击下方切片可直接试看'}
+                      {isStreaming ? '流水线解析中...' : '点击进度条或下方切片可直接试看'}
                     </span>
                   )}
                 </div>
@@ -834,8 +878,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
             </div>
           </div>
 
-          {/* 右侧：多产品时空热度双轨与流水线控制中枢 */}
-          <div className="flex-1 flex flex-col justify-between min-w-0 gap-3 py-0.5">
+          {/* 右侧：流水线中枢与单品筛选控制台 (精简纯净) */}
+          <div className="flex-1 flex flex-col justify-between min-w-0 gap-3 py-1">
             {/* 顶栏：视频信息与阶段锁定状态 */}
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -847,8 +891,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
                     {videoData.fileName}
                   </h2>
                 </div>
-                <p className="text-xs text-neutral-400 mt-0.5">
-                  视频总时长: {videoData.durationFormatted} · {products.length > 0 ? `划分 ${products.length} 个带货单品 · 共 ${clips.length} 条高光切片` : '正在解析带货单品...'}
+                <p className="text-xs text-neutral-400 mt-1">
+                  总时长: {videoData.durationFormatted} · {products.length > 0 ? `已识别 ${products.length} 个带货单品 · 规划 ${clips.length} 条黄金切片` : '正在解析带货单品...'}
                 </p>
               </div>
 
@@ -879,94 +923,28 @@ export default function VideoSlicerStudio({ onAddToast }) {
               </div>
             </div>
 
-            {/* 中部：渐进式多产品与切片时空时序热度双轨 */}
-            <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-200/70">
-              <div className="flex items-center justify-between mb-1.5 text-xs">
+            {/* 中部：商品筛选快速胶囊 (带色标与切片统计) */}
+            <div className="p-3.5 rounded-xl bg-neutral-50/80 border border-neutral-200/70">
+              <div className="flex items-center justify-between mb-2 text-xs">
                 <span className="font-semibold text-neutral-700 flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-neutral-500" />
-                  多产品时空热度分布时序轨
+                  带货单品快速筛选
                 </span>
                 <span className="text-neutral-400 text-[11px]">
-                  {products.length > 0 ? `已挂载 ${products.length} 个单品区间 · ${clips.length} 段高光` : '等待识别商品'}
+                  点击下方胶囊可单独过滤商品矩阵
                 </span>
               </div>
 
-              {/* 轨 1: 产品分段色带 */}
-              <div className="relative h-5 bg-neutral-200/70 rounded-md overflow-hidden mb-1.5 border border-neutral-300/40">
-                {products.length === 0 ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">
-                    等待第一阶段产品识别分段...
-                  </div>
-                ) : (
-                  <div className="absolute inset-0">
-                    {products.map((p) => (
-                      <button
-                        key={p.index}
-                        onClick={() => setProductFilter(productFilter === p.index ? -1 : p.index)}
-                        className="absolute top-0 bottom-0 text-[10px] text-white font-medium truncate px-2 flex items-center transition-all duration-300 hover:brightness-110 cursor-pointer"
-                        style={{
-                          left: `${p.startPct}%`,
-                          width: `${p.widthPct}%`,
-                          backgroundColor: colorOf(p.index),
-                          opacity: productFilter < 0 || productFilter === p.index ? 1 : 0.35
-                        }}
-                        title={`${p.name} (${p.sellingPoints})`}
-                      >
-                        {p.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* 轨 2: 细分环节切片色块 */}
-              <div className="relative h-6 bg-neutral-100 rounded-md overflow-hidden border border-neutral-200 flex items-center">
-                {clips.length === 0 ? (
-                  <div className="w-full text-center text-[10px] text-neutral-400 italic">
-                    等待第二阶段逐产品切片规划...
-                  </div>
-                ) : (
-                  <div className="absolute inset-0">
-                    {visibleClips.map((clip) => {
-                      const isSelected = activeClip?.id === clip.id;
-                      return (
-                        <div
-                          key={clip.id}
-                          onClick={() => handleCardClick(clip)}
-                          className={`absolute top-0.5 bottom-0.5 rounded text-[9px] text-neutral-800 bg-white/95 border font-mono flex items-center justify-center overflow-hidden fade-in-up cursor-pointer transition-all ${
-                            isSelected
-                              ? 'border-neutral-900 bg-neutral-900 text-white font-bold ring-1 ring-neutral-900'
-                              : 'border-neutral-300 hover:border-neutral-500'
-                          }`}
-                          style={{
-                            left: `${clip.startPct}%`,
-                            width: `${clip.widthPct}%`
-                          }}
-                          title={`${clip.productName || ''} · ${clip.tag} (${clip.timeRange})`}
-                        >
-                          {clip.tag}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 底栏：单品筛选胶囊 + 批量导出工具条 */}
-            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
-              {/* 单品快速过滤胶囊 */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs text-neutral-400 font-medium">筛选单品:</span>
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => setProductFilter(-1)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
                     productFilter === -1
                       ? 'bg-neutral-900 text-white shadow-2xs'
-                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                      : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-100'
                   }`}
                 >
-                  全部 ({clips.length})
+                  全部单品 ({clips.length})
                 </button>
                 {products.map((p) => {
                   const pCount = clips.filter((c) => c.productIndex === p.index).length;
@@ -975,34 +953,45 @@ export default function VideoSlicerStudio({ onAddToast }) {
                     <button
                       key={p.index}
                       onClick={() => setProductFilter(isSel ? -1 : p.index)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
                         isSel
                           ? 'bg-neutral-900 text-white shadow-2xs'
-                          : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                          : 'bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-100'
                       }`}
+                      title={p.sellingPoints}
                     >
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorOf(p.index) }} />
-                      <span>{p.name}</span>
-                      <span className="text-[10px] opacity-70 font-mono">({pCount})</span>
+                      <span className="font-semibold">{p.name}</span>
+                      <span className="text-[10px] opacity-70 font-mono">({pCount}段)</span>
                     </button>
                   );
                 })}
               </div>
+            </div>
 
-              {/* 批量操作按钮组 */}
-              <div className="flex items-center gap-2">
+            {/* 底栏：一键导出剪映与批量下载核心操作条 */}
+            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+              <div className="text-xs text-neutral-400">
+                <span>
+                  {isPipelineLocked
+                    ? '流水线锁定中，完毕后即可一键导出...'
+                    : `当前就绪 ${visibleClips.length} 段高光切片，可随时一键生成工程`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2.5">
                 <button
                   id="btnBatchExportJianying"
                   disabled={isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0}
                   onClick={() => handleExportJianying(visibleClips)}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition shadow-2xs cursor-pointer active:scale-95 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer active:scale-95 ${
                     isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0
                       ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
                       : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
                   }`}
-                  title="将当前筛选的所有切片打包为一个剪映多轨时间轴工程并唤起剪映"
+                  title="将当前全部切片打包为一个剪映多轨时间轴工程并自动置顶唤起剪映"
                 >
-                  <Film className="w-3.5 h-3.5" />
+                  <Film className="w-4 h-4" />
                   <span>
                     {exportingJianyingId === 'all'
                       ? '写入剪映中...'
@@ -1014,14 +1003,14 @@ export default function VideoSlicerStudio({ onAddToast }) {
                   id="btnBatchExport"
                   disabled={isPipelineLocked || isCutting || visibleClips.length === 0}
                   onClick={handleExportAll}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition shadow-2xs cursor-pointer active:scale-95 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer active:scale-95 ${
                     isPipelineLocked || isCutting || visibleClips.length === 0
                       ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
                       : 'bg-neutral-900 hover:bg-black text-white shadow-sm'
                   }`}
                   title="调用本地 FFmpeg 物理分割生成独立 MP4 短视频"
                 >
-                  <Download className="w-3.5 h-3.5" />
+                  <Download className="w-4 h-4" />
                   <span>
                     {isPipelineLocked
                       ? '处理中'
