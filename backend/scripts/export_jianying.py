@@ -36,7 +36,7 @@ def get_draft_root():
     os.makedirs(mac_path, exist_ok=True)
     return mac_path
 
-def update_root_meta_info(root_path, draft_id, draft_name, draft_fold_path, draft_json_file, duration_us):
+def update_root_meta_info(root_path, draft_id, draft_name, draft_fold_path, draft_json_file, duration_us, cover_path="", materials_size=0):
     meta_file = os.path.join(root_path, "root_meta_info.json")
     now_us = int(time.time() * 1000000)
     
@@ -59,7 +59,7 @@ def update_root_meta_info(root_path, draft_id, draft_name, draft_fold_path, draf
         "draft_cloud_template_id": "",
         "draft_cloud_tutorial_info": "",
         "draft_cloud_videocut_purchase_info": "",
-        "draft_cover": "",
+        "draft_cover": cover_path or "",
         "draft_fold_path": draft_fold_path,
         "draft_id": draft_id,
         "draft_is_ai_shorts": False,
@@ -72,7 +72,7 @@ def update_root_meta_info(root_path, draft_id, draft_name, draft_fold_path, draf
         "draft_name": draft_name,
         "draft_new_version": "",
         "draft_root_path": root_path,
-        "draft_timeline_materials_size": 0,
+        "draft_timeline_materials_size": materials_size or 0,
         "draft_type": "",
         "draft_web_article_video_enter_from": "",
         "pippit_avatar_url": "",
@@ -249,6 +249,39 @@ def export_draft(payload):
     if os.path.exists(draft_content_file):
         shutil.copyfile(draft_content_file, draft_info_file)
 
+    # 自动生成草稿封面图 draft_cover.jpg (剪映桌面版需要缩略图索引)
+    cover_path = os.path.join(draft_folder_path, "draft_cover.jpg")
+    try:
+        import subprocess
+        subprocess.run([
+            "ffmpeg", "-y", "-ss", "00:00:01", "-i", video_mat_path,
+            "-vframes", "1", "-q:v", "2", cover_path
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        cover_path = ""
+
+    materials_size = 0
+    if os.path.exists(video_mat_path):
+        materials_size = os.path.getsize(video_mat_path)
+
+    # 补充生成 attachment_pc_common.json 确保工程配置完备
+    attachment_file = os.path.join(draft_folder_path, "attachment_pc_common.json")
+    if not os.path.exists(attachment_file):
+        try:
+            with open(attachment_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "ai_packaging_infos": [],
+                    "ai_packaging_report_info": {"caption_id_list":[],"commercial_material":"","material_source":"","method":"","page_from":"","style":"","task_id":"","text_style":"","tos_id":"","video_category":""},
+                    "broll": {"ai_packaging_infos":[],"ai_packaging_report_info":{"caption_id_list":[],"commercial_material":"","material_source":"","method":"","page_from":"","style":"","task_id":"","text_style":"","tos_id":"","video_category":""}},
+                    "commercial_music_category_ids": [],
+                    "pc_feature_flag": 0,
+                    "recognize_tasks": [],
+                    "template_item_infos": [],
+                    "unlock_template_ids": []
+                }, f)
+        except Exception:
+            pass
+
     # 更新全局 root_meta_info.json
     update_root_meta_info(
         root_path,
@@ -256,7 +289,9 @@ def export_draft(payload):
         draft_name,
         draft_folder_path,
         draft_info_file,
-        timeline_cursor_us
+        timeline_cursor_us,
+        cover_path=cover_path,
+        materials_size=materials_size
     )
 
     return {

@@ -506,7 +506,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
         }
 
         const msg = json.data.appLaunched
-          ? `已成功导出工程【${json.data.draftName}】并为您唤起剪映！在剪映草稿箱双击首项即可编辑。`
+          ? `已成功导出工程【${json.data.draftName}】并为您唤起剪映！若剪映此前已打开，请在剪映中切换一下左侧标签刷新草稿列表，双击首项即可编辑。`
           : `已成功导出剪映工程【${json.data.draftName}】！打开剪映App草稿箱首位即可直接精剪。`;
 
         onAddToast && onAddToast(msg);
