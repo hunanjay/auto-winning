@@ -6,9 +6,19 @@ import { serve } from '@hono/node-server';
 import { Context } from '@deepseek-ai/cordis';
 import dotenv from 'dotenv';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { AliyunWanxService } from './plugins/aliyun-wanx.js';
 import { AliyunChatService } from './plugins/aliyun-chat.js';
+import * as MoneyPrinterSlicerPlugin from './plugins/moneyprinter-slicer.js';
+import * as GptImageStylePlugin from './plugins/gpt-image-style.js';
+import {
+  probeVideo,
+  generateVideoHighlights,
+  cutVideoClip,
+  formatSecondsToTime,
+} from './services/video-cutter.js';
+import { TemplateDao, ProductDao } from './db.js';
 
 // 1. 双重环境配置加载：优先读取项目根目录的 .env.local，其次读取 backend/.env
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -19,8 +29,10 @@ const apiKey = process.env.DASHSCOPE_API_KEY || '';
 const baseUrl = process.env.DASHSCOPE_BASE_URL || '';
 const port = parseInt(process.env.PORT || '3001', 10);
 const defaultModel = process.env.DEFAULT_MODEL || 'qwen3.6-flash';
+const moneyprinterServerUrl = process.env.MONEYPRINTER_SERVER_URL || 'http://127.0.0.1:8085';
+const moneyprinterWebuiUrl = process.env.MONEYPRINTER_WEBUI_URL || 'http://127.0.0.1:8501';
 
-// 2. 初始化 Cordis 微内核上下文 (DSH 底座)
+// 2. 初始化 DeepSeek Harness 微内核上下文 (基于 Cordis)
 const cordisCtx = new Context();
 const wanxService = new AliyunWanxService(cordisCtx, { apiKey });
 const chatService = new AliyunChatService(cordisCtx, { apiKey, baseUrl, defaultModel });
@@ -28,7 +40,16 @@ const chatService = new AliyunChatService(cordisCtx, { apiKey, baseUrl, defaultM
 cordisCtx.provide('aliyunWanx', wanxService);
 cordisCtx.provide('aliyunChat', chatService);
 
-console.log('🚀 [DSH Runtime] Cordis 微内核及插件体系已就绪');
+// 以 DeepSeek Harness 标准规范装配智能切片插件
+cordisCtx.plugin(MoneyPrinterSlicerPlugin, {
+  serverUrl: moneyprinterServerUrl,
+  webuiUrl: moneyprinterWebuiUrl,
+});
+
+// 以 DeepSeek Harness 标准规范装配 GPT-Image-2 风格库与提示词插件
+cordisCtx.plugin(GptImageStylePlugin, {});
+
+console.log('🚀 [DSH Runtime] DeepSeek Harness 微内核及插件体系 (包含切片 & GPT-Image-2风格库) 已就绪');
 
 // 3. 初始化 Hono OpenAPI 应用
 const app = new OpenAPIHono();
@@ -148,7 +169,7 @@ const healthRoute = createRoute({
 app.openapi(healthRoute, (c) => {
   return c.json({
     status: 'ok',
-    plugins: ['aliyun-wanx', 'aliyun-chat'],
+    plugins: ['aliyun-wanx', 'aliyun-chat', 'moneyprinter-slicer', 'gpt-image-style'],
     apiKeyConfigured: Boolean(apiKey),
     defaultModel,
     baseUrl: baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -232,6 +253,478 @@ app.post('/api/chat', async (c) => {
 });
 
 // -------------------------------------------------------------
+// 4. 智能切片微服务 (真实视频物理裁剪 + MoneyPrinterTurbo)
+// -------------------------------------------------------------
+
+// (0) 静态视频流媒体分发 (支持 HTTP Range 断点续播与快速 Seek)
+app.get('/uploads/*', async (c) => {
+  const reqSubPath = c.req.path.replace(/^\/uploads\//, '');
+  const filePath = path.resolve(__dirname, '../uploads', reqSubPath);
+
+  if (!fs.existsSync(filePath)) {
+    return c.text('视频文件未找到', 404);
+  }
+
+  const stat = fs.statSync(filePath);
+  const range = c.req.header('range');
+  const isDownload = c.req.query('download') === '1';
+  const baseName = path.basename(filePath);
+  const downloadHeader: Record<string, string> = isDownload
+    ? { 'Content-Disposition': `attachment; filename="${encodeURIComponent(baseName)}"` }
+    : {};
+
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+    const chunkSize = end - start + 1;
+    const fileStream = fs.createReadStream(filePath, { start, end });
+    return new Response(fileStream as any, {
+      status: 206,
+      headers: {
+        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(chunkSize),
+        'Content-Type': 'video/mp4',
+        ...downloadHeader,
+      },
+    });
+  }
+
+  const fileStream = fs.createReadStream(filePath);
+  return new Response(fileStream as any, {
+    status: 200,
+    headers: {
+      'Content-Length': String(stat.size),
+      'Content-Type': 'video/mp4',
+      'Accept-Ranges': 'bytes',
+      ...downloadHeader,
+    },
+  });
+});
+
+// (1) 上传长视频并进行真实 AI 探测与高光划分
+app.post('/api/slicer/upload-and-analyze', async (c) => {
+  try {
+    const uploadsDir = path.resolve(__dirname, '../uploads/videos');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    let savedFilePath = '';
+    let originalName = 'sample_livestream.mp4';
+    let fileId = `vid-${Date.now()}`;
+
+    // 处理 multipart/form-data 或默认示例
+    const contentType = c.req.header('content-type') || '';
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await c.req.parseBody();
+      const videoFile = formData['video'] as any;
+
+      if (videoFile && typeof videoFile === 'object' && videoFile.name) {
+        originalName = videoFile.name;
+        const ext = path.extname(originalName) || '.mp4';
+        fileId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        savedFilePath = path.join(uploadsDir, `${fileId}${ext}`);
+
+        // 将文件数据写入磁盘
+        const arrayBuffer = await videoFile.arrayBuffer();
+        fs.writeFileSync(savedFilePath, Buffer.from(arrayBuffer));
+      }
+    }
+
+    // 若未上传新文件，使用已就绪的 60s 真实直播样片
+    if (!savedFilePath || !fs.existsSync(savedFilePath)) {
+      savedFilePath = path.join(uploadsDir, 'sample_livestream.mp4');
+      fileId = 'sample_livestream';
+      originalName = '20261102_淘宝双11大促带货直播回放.mp4';
+    }
+
+    // 真正调用 ffprobe 进行元数据探测
+    const meta = await probeVideo(savedFilePath);
+    const clips = generateVideoHighlights(meta);
+    const savedFileName = path.basename(savedFilePath);
+
+    return c.json({
+      code: 0,
+      data: {
+        video: {
+          id: fileId,
+          fileName: originalName,
+          filePath: savedFilePath,
+          videoUrl: `http://localhost:${port}/uploads/videos/${savedFileName}`,
+          duration: meta.duration,
+          durationFormatted: formatSecondsToTime(meta.duration),
+          width: meta.width,
+          height: meta.height,
+          ratio: meta.ratio,
+          sizeBytes: meta.sizeBytes,
+        },
+        clips,
+      },
+    });
+  } catch (err: any) {
+    console.error('视频分析失败:', err);
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (2) 真实物理切片 (调用 FFmpeg 裁切单个高光片段)
+app.post('/api/slicer/cut-clip', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { videoId, startSeconds, durationSeconds, clipId, clipTitle } = body;
+
+    const clipsDir = path.resolve(__dirname, '../uploads/clips');
+    if (!fs.existsSync(clipsDir)) {
+      fs.mkdirSync(clipsDir, { recursive: true });
+    }
+
+    // 查找原始视频路径
+    const videosDir = path.resolve(__dirname, '../uploads/videos');
+    let inputPath = path.join(videosDir, `${videoId}.mp4`);
+    if (!fs.existsSync(inputPath)) {
+      inputPath = path.join(videosDir, 'sample_livestream.mp4');
+    }
+
+    const outputFileName = `${clipId || `clip-${Date.now()}`}.mp4`;
+    const outputPath = path.join(clipsDir, outputFileName);
+
+    // 真正执行 FFmpeg 切片
+    const result = await cutVideoClip(
+      inputPath,
+      Math.max(0, parseFloat(startSeconds || 0)),
+      Math.max(3, parseFloat(durationSeconds || 15)),
+      outputPath
+    );
+
+    return c.json({
+      code: 0,
+      message: '切片生成成功',
+      data: {
+        clipId,
+        title: clipTitle,
+        downloadUrl: `http://localhost:${port}/uploads/clips/${outputFileName}`,
+        sizeBytes: result.sizeBytes,
+        duration: result.duration,
+      },
+    });
+  } catch (err: any) {
+    console.error('物理切片失败:', err);
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (3) 一键批量真实物理裁切全部切片
+app.post('/api/slicer/cut-all', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { videoId, clips = [] } = body;
+
+    const videosDir = path.resolve(__dirname, '../uploads/videos');
+    let inputPath = path.join(videosDir, `${videoId}.mp4`);
+    if (!fs.existsSync(inputPath)) {
+      inputPath = path.join(videosDir, 'sample_livestream.mp4');
+    }
+
+    const clipsDir = path.resolve(__dirname, '../uploads/clips');
+    const results = [];
+
+    for (const clip of clips) {
+      const outputFileName = `${clip.id}.mp4`;
+      const outputPath = path.join(clipsDir, outputFileName);
+      await cutVideoClip(
+        inputPath,
+        clip.startSeconds,
+        clip.durationSeconds,
+        outputPath
+      );
+      results.push({
+        id: clip.id,
+        title: clip.title,
+        downloadUrl: `http://localhost:${port}/uploads/clips/${outputFileName}`,
+      });
+    }
+
+    return c.json({
+      code: 0,
+      message: `成功生成全部 ${results.length} 个带货短视频切片`,
+      data: {
+        clips: results,
+      },
+    });
+  } catch (err: any) {
+    console.error('批量切片失败:', err);
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (4) 检查切片引擎健康度
+app.get('/api/slicer/status', async (c) => {
+  const result = await cordisCtx.slicer.checkHealth();
+  return c.json({
+    code: result.status === 'connected' ? 0 : 1,
+    ...result,
+  });
+});
+
+// (2) 获取切片与短视频任务列表
+app.get('/api/slicer/tasks', async (c) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1', 10);
+    const pageSize = parseInt(c.req.query('page_size') || '10', 10);
+    const data = await cordisCtx.slicer.listTasks(page, pageSize);
+    return c.json(data);
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (3) 获取单条切片任务详情
+app.get('/api/slicer/tasks/:taskId', async (c) => {
+  try {
+    const taskId = c.req.param('taskId');
+    const data = await cordisCtx.slicer.getTaskStatus(taskId);
+    return c.json(data);
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (4) 提交切片/短视频生成任务
+app.post('/api/slicer/create', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const data = await cordisCtx.slicer.createVideoClip(body);
+    return c.json(data);
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (5) 提取视频语音字幕 (Whisper)
+app.post('/api/slicer/subtitle', async (c) => {
+  try {
+    const { audioUrl, language } = await c.req.json().catch(() => ({}));
+    const data = await cordisCtx.slicer.extractSubtitle(audioUrl, language || 'zh');
+    return c.json(data);
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (6) 视频流与产物反向代理 (支持 Node 后端单点透传)
+app.get('/api/slicer/stream/*', async (c) => {
+  const fullPath = c.req.path.replace(/^\/api\/slicer\/stream\//, '');
+  const targetUrl = `${moneyprinterServerUrl}/api/v1/stream/${fullPath}`;
+  try {
+    const upstreamRes = await fetch(targetUrl);
+    return new Response(upstreamRes.body, {
+      status: upstreamRes.status,
+      headers: upstreamRes.headers,
+    });
+  } catch (err: any) {
+    return c.json({ code: 502, error: `代理流媒体失败: ${err.message}` }, 502);
+  }
+});
+
+// (7) 获取 DeepSeek Harness Agent Tools (供大模型 Function Calling 与智能体编排)
+app.get('/api/dsh/tools', (c) => {
+  const tools = [
+    ...(cordisCtx.slicer ? cordisCtx.slicer.getAgentTools() : []),
+    ...(cordisCtx.gptImageStyle ? cordisCtx.gptImageStyle.getAgentTools() : []),
+  ];
+  return c.json({
+    code: 0,
+    engine: 'DeepSeek Harness (DSH)',
+    pluginCount: 2,
+    tools,
+  });
+});
+
+// (8) 统一派发执行 DeepSeek Harness Agent 工具调用
+app.post('/api/dsh/tools/call', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { toolName, args = {} } = body;
+    if (!toolName) {
+      return c.json({ code: 400, error: '缺少必需参数: toolName' }, 400);
+    }
+
+    const slicerTools = cordisCtx.slicer ? cordisCtx.slicer.getAgentTools() : [];
+    if (slicerTools.some((t: any) => t.function?.name === toolName)) {
+      const result = await cordisCtx.slicer.executeTool(toolName, args);
+      return c.json({ code: 0, toolName, result });
+    }
+
+    const styleTools = cordisCtx.gptImageStyle ? cordisCtx.gptImageStyle.getAgentTools() : [];
+    if (styleTools.some((t: any) => t.function?.name === toolName)) {
+      const result = await cordisCtx.gptImageStyle.executeTool(toolName, args);
+      return c.json({ code: 0, toolName, result });
+    }
+
+    return c.json({ code: 404, error: `未在 DSH 插件注册表中找到工具: ${toolName}` }, 404);
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (9) GPT-Image-2 风格库与案例库 REST API
+app.get('/api/style-library/health', (c) => {
+  return c.json({
+    code: 0,
+    data: cordisCtx.gptImageStyle.checkHealth(),
+  });
+});
+
+app.get('/api/style-library/categories', (c) => {
+  return c.json({
+    code: 0,
+    data: cordisCtx.gptImageStyle.getCategories(),
+  });
+});
+
+app.get('/api/style-library/templates', (c) => {
+  const category = c.req.query('category');
+  const style = c.req.query('style');
+  const scene = c.req.query('scene');
+  const search = c.req.query('search');
+  return c.json({
+    code: 0,
+    data: cordisCtx.gptImageStyle.getTemplates({ category, style, scene, search }),
+  });
+});
+
+app.get('/api/style-library/templates/:id', (c) => {
+  const id = c.req.param('id');
+  const template = cordisCtx.gptImageStyle.getTemplateById(id);
+  if (!template) {
+    return c.json({ code: 404, error: '模板未找到' }, 404);
+  }
+  return c.json({ code: 0, data: template });
+});
+
+app.get('/api/style-library/styles', (c) => {
+  return c.json({
+    code: 0,
+    data: cordisCtx.gptImageStyle.getStyles(),
+  });
+});
+
+app.get('/api/style-library/scenes', (c) => {
+  return c.json({
+    code: 0,
+    data: cordisCtx.gptImageStyle.getScenes(),
+  });
+});
+
+app.get('/api/style-library/cases', (c) => {
+  const query = c.req.query('query');
+  const category = c.req.query('category');
+  const style = c.req.query('style');
+  const scene = c.req.query('scene');
+  const page = parseInt(c.req.query('page') || '1', 10);
+  const pageSize = parseInt(c.req.query('pageSize') || '20', 10);
+  return c.json({
+    code: 0,
+    data: cordisCtx.gptImageStyle.getCases({ query, category, style, scene, page, pageSize }),
+  });
+});
+
+app.get('/api/style-library/cases/:id', (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const caseItem = cordisCtx.gptImageStyle.getCaseById(id);
+  if (!caseItem) {
+    return c.json({ code: 404, error: '案例未找到' }, 404);
+  }
+  return c.json({ code: 0, data: caseItem });
+});
+
+app.post('/api/style-library/prompt/compose', async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body.subject) {
+      return c.json({ code: 400, error: '缺少主体参数: subject' }, 400);
+    }
+    const result = cordisCtx.gptImageStyle.composePrompt(body);
+    return c.json({ code: 0, data: result });
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// -------------------------------------------------------------
+// (10) SQLite 持久化存储接口 (自定义模版与商品)
+// -------------------------------------------------------------
+
+// 自定义模版 CRUD
+app.get('/api/templates', (c) => {
+  const templates = TemplateDao.getAll();
+  return c.json({ code: 0, data: templates });
+});
+
+app.post('/api/templates', async (c) => {
+  try {
+    const body = await c.req.json();
+    if (Array.isArray(body)) {
+      // 批量同步迁移
+      const saved = body.map((item) => TemplateDao.upsert(item));
+      return c.json({ code: 0, message: `成功同步 ${saved.length} 条模版`, data: saved });
+    } else {
+      if (!body.title || !body.prompt) {
+        return c.json({ code: 400, error: '缺少标题或提示词参数' }, 400);
+      }
+      const saved = TemplateDao.upsert({
+        id: body.id || `tpl-${Date.now()}`,
+        ...body,
+      });
+      return c.json({ code: 0, data: saved });
+    }
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+app.delete('/api/templates/:id', (c) => {
+  const id = c.req.param('id');
+  TemplateDao.delete(id);
+  return c.json({ code: 0, message: '删除成功', id });
+});
+
+// 自定义商品 CRUD
+app.get('/api/products', (c) => {
+  const products = ProductDao.getAll();
+  return c.json({ code: 0, data: products });
+});
+
+app.post('/api/products', async (c) => {
+  try {
+    const body = await c.req.json();
+    if (Array.isArray(body)) {
+      const saved = body.map((item) => ProductDao.upsert(item));
+      return c.json({ code: 0, message: `成功同步 ${saved.length} 个商品`, data: saved });
+    } else {
+      if (!body.name) {
+        return c.json({ code: 400, error: '缺少商品名称' }, 400);
+      }
+      const saved = ProductDao.upsert({
+        id: body.id || `prod-${Date.now()}`,
+        ...body,
+      });
+      return c.json({ code: 0, data: saved });
+    }
+  } catch (err: any) {
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+app.delete('/api/products/:id', (c) => {
+  const id = c.req.param('id');
+  ProductDao.delete(id);
+  return c.json({ code: 0, message: '删除成功', id });
+});
+
+// -------------------------------------------------------------
 // 类似 FastAPI 的 Swagger UI 与 OpenAPI Specification
 // -------------------------------------------------------------
 
@@ -271,7 +764,8 @@ serve(
     console.log(`📡 服务地址:     http://localhost:${info.port}`);
     console.log(`📖 Swagger 文档:  http://localhost:${info.port}/docs   👈 (类似 FastAPI)`);
     console.log(`📄 OpenAPI 规范:  http://localhost:${info.port}/doc`);
-    console.log(`🔌 已挂载插件:   阿里云通义万相 (生图/换光)、阿里云百炼 Chat`);
+    console.log(`🔌 已挂载插件:   阿里云通义万相 (生图/换光)、阿里云百炼 Chat、DSH 智能切片、DSH GPT-Image-2风格库`);
+    console.log(`🎬 智能切片Server: MoneyPrinterTurbo API -> ${moneyprinterServerUrl} (WebUI: ${moneyprinterWebuiUrl})`);
     console.log(`🔑 认证状态:     ${apiKey ? '百炼 API Key 已就绪 ✅' : '未检测到 API Key ⚠️'}`);
     console.log(`======================================================\n`);
   }

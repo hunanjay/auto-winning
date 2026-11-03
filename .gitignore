@@ -28,3 +28,8 @@ backend/.env.*
 *.njsproj
 *.sln
 *.sw?
+
+# Local SQLite & Dynamic Upload Clips
+backend/data/*.db
+backend/uploads/clips/*
+!backend/uploads/clips/.gitkeep
