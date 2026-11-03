@@ -325,13 +325,13 @@ export default function App() {
                 setActiveTab('image');
               }
             }}
-            className="flex items-center justify-center px-1 py-1 cursor-pointer group rounded-xl hover:bg-slate-50 transition-colors"
+            className="flex items-center justify-start px-1.5 py-1 cursor-pointer group rounded-xl hover:bg-slate-50 transition-colors"
             title="团团有限公司 (/image)"
           >
             <img
               src="/logo.png"
               alt="团团有限公司"
-              className="h-9 w-auto max-w-[156px] object-contain transition-transform duration-200 group-hover:scale-105"
+              className="h-8.5 w-auto max-w-[150px] object-contain object-left transition-transform duration-200 group-hover:scale-105"
             />
           </a>
 
