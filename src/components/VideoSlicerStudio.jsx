@@ -720,8 +720,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
       <main className="flex-1 flex flex-col overflow-hidden p-4 lg:p-5 gap-4 max-w-[1900px] w-full mx-auto select-none">
         {/* 上半部分：紧凑监看控制台 (左侧视窗 + 右侧时空热度时序中枢) */}
         <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-4 shrink-0 flex flex-col lg:flex-row gap-5 items-stretch">
-          {/* 左侧：视频监视视窗 (约 440px 宽，比例自适应) */}
-          <div className="w-full lg:w-[440px] xl:w-[480px] shrink-0 flex flex-col justify-center">
+          {/* 左侧：视频监视视窗 (放大至 560px~680px，正下方配备独立时间戳与播放控制条) */}
+          <div className="w-full lg:w-[540px] xl:w-[600px] 2xl:w-[660px] shrink-0 flex flex-col gap-2.5">
             <div className="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group shadow-inner">
               <video
                 ref={videoRef}
@@ -748,35 +748,87 @@ export default function VideoSlicerStudio({ onAddToast }) {
                 </div>
               )}
 
-              {/* 卡拉OK实时口播台词浮层 */}
+              {/* 卡拉OK实时口播台词浮层 (悬浮于画面底部) */}
               {karaokeText && (
-                <div className="absolute bottom-12 left-4 right-4 flex justify-center pointer-events-none z-10">
-                  <div className="max-w-md px-3 py-1.5 rounded-lg bg-black/85 backdrop-blur text-white text-[11px] font-medium text-center shadow-lg border border-white/10 truncate">
-                    <span className="text-neutral-400 mr-1.5 font-mono">口播:</span>
+                <div className="absolute bottom-3 left-4 right-4 flex justify-center pointer-events-none z-10">
+                  <div className="max-w-lg px-3.5 py-1.5 rounded-lg bg-black/85 backdrop-blur text-white text-xs font-medium text-center shadow-lg border border-white/10 truncate">
+                    <span className="text-neutral-400 mr-1.5 font-mono">当前口播:</span>
                     <span>{karaokeText}</span>
                   </div>
                 </div>
               )}
+            </div>
 
-              {/* 画面内播放控制器 */}
-              <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between px-3 py-1.5 rounded-lg bg-black/65 backdrop-blur border border-white/10 text-white opacity-85 group-hover:opacity-100 transition-opacity">
+            {/* 独立放置在视频窗口正下方的时间戳与控制条 */}
+            <div className="flex flex-col gap-1.5 px-3.5 py-2.5 rounded-xl bg-neutral-900 text-white shadow-xs">
+              {/* 交互进度条 (支持快速 Seek 跳转) */}
+              <div
+                className="h-1.5 w-full bg-neutral-700/80 hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                  if (videoRef.current && videoData.duration) {
+                    const target = pct * videoData.duration;
+                    videoRef.current.currentTime = target;
+                    setCurrentTime(target);
+                  }
+                }}
+                title="点击进度条跳转播放位置"
+              >
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all duration-100"
+                  style={{
+                    width: `${videoData.duration ? (currentTime / videoData.duration) * 100 : 0}%`
+                  }}
+                />
+              </div>
+
+              {/* 控制按钮与时间戳详细信息 */}
+              <div className="flex items-center justify-between text-xs pt-0.5">
                 <div className="flex items-center gap-2.5">
-                  <button onClick={handleTogglePlay} className="p-0.5 rounded hover:bg-white/20 transition-colors cursor-pointer">
+                  <button
+                    onClick={handleTogglePlay}
+                    className="p-1 rounded hover:bg-white/20 transition-colors cursor-pointer text-white"
+                    title={isPlaying ? '暂停' : '播放'}
+                  >
                     {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                   </button>
-                  <button onClick={() => setIsMuted(!isMuted)} className="p-0.5 rounded hover:bg-white/20 transition-colors cursor-pointer">
-                    {isMuted ? <VolumeX className="w-3.5 h-3.5 text-neutral-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
+
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="p-1 rounded hover:bg-white/20 transition-colors cursor-pointer text-white"
+                    title={isMuted ? '开启声音' : '静音'}
+                  >
+                    {isMuted ? (
+                      <VolumeX className="w-3.5 h-3.5 text-neutral-400" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    )}
                   </button>
-                  <span className="text-[11px] font-mono text-neutral-300">
-                    {Math.floor(currentTime / 60).toString().padStart(2, '0')}:
-                    {Math.floor(currentTime % 60).toString().padStart(2, '0')} / {videoData.durationFormatted}
-                  </span>
+
+                  {/* 核心时间戳：当前播放时间 / 视频总时长 */}
+                  <div className="flex items-center gap-1 font-mono text-[11px] text-neutral-300 ml-1">
+                    <span className="text-white font-semibold">
+                      {Math.floor(currentTime / 60).toString().padStart(2, '0')}:
+                      {Math.floor(currentTime % 60).toString().padStart(2, '0')}
+                    </span>
+                    <span className="text-neutral-500">/</span>
+                    <span className="text-neutral-400">{videoData.durationFormatted}</span>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    {activeClip?.tag || (isStreaming ? '流水线解析中' : '切片试看就绪')}
-                  </span>
+                {/* 当前选中的切片高光区间时间戳与标签 */}
+                <div className="flex items-center gap-2 text-[11px]">
+                  {activeClip ? (
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono">
+                      <Clock className="w-3 h-3 text-blue-400" />
+                      <span>切片区间: {activeClip.timeRange} ({activeClip.durationSeconds}s)</span>
+                    </span>
+                  ) : (
+                    <span className="text-neutral-400 font-mono text-[10px]">
+                      {isStreaming ? '流水线解析中...' : '点击下方切片可直接试看'}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
