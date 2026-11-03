@@ -1350,7 +1350,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
                                             e.stopPropagation();
                                             handleExportJianying([clip]);
                                           }}
-                                          className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                                          className={`flex shrink-0 items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
                                             isPipelineLocked || exportingJianyingId === clip.id
                                               ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                                               : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 active:scale-95'
@@ -1358,7 +1358,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
                                           title="一键将该片段与字幕打包存入剪映草稿箱"
                                         >
                                           <Film className="w-3 h-3 text-blue-600" />
-                                          <span>
+                                          <span className="whitespace-nowrap">
                                             {exportingJianyingId === clip.id ? '写入中' : '导入剪映'}
                                           </span>
                                         </button>
@@ -1369,14 +1369,14 @@ export default function VideoSlicerStudio({ onAddToast }) {
                                             e.stopPropagation();
                                             handleExportSingle(clip);
                                           }}
-                                          className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                                          className={`flex shrink-0 items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
                                             isPipelineLocked || isCutting
                                               ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                                               : 'bg-neutral-900 hover:bg-black text-white active:scale-95'
                                           }`}
                                         >
                                           <Download className="w-3 h-3" />
-                                          <span>导出</span>
+                                          <span className="whitespace-nowrap">导出</span>
                                         </button>
                                       </div>
                                     </div>
