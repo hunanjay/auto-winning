@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { AliyunWanxService } from './plugins/aliyun-wanx.js';
 import { AliyunChatService } from './plugins/aliyun-chat.js';
+import { DshTracerService } from './plugins/dsh-tracer.js';
 import * as MoneyPrinterSlicerPlugin from './plugins/moneyprinter-slicer.js';
 import * as GptImageStylePlugin from './plugins/gpt-image-style.js';
 import {
@@ -33,11 +34,9 @@ const moneyprinterWebuiUrl = process.env.MONEYPRINTER_WEBUI_URL || 'http://127.0
 
 // 2. 初始化 DeepSeek Harness 微内核上下文 (基于 Cordis)
 const cordisCtx = new Context();
-const wanxService = new AliyunWanxService(cordisCtx, { apiKey });
-const chatService = new AliyunChatService(cordisCtx, { apiKey, baseUrl, defaultModel });
-
-cordisCtx.provide('aliyunWanx', wanxService);
-cordisCtx.provide('aliyunChat', chatService);
+new DshTracerService(cordisCtx);
+new AliyunWanxService(cordisCtx, { apiKey });
+new AliyunChatService(cordisCtx, { apiKey, baseUrl, defaultModel });
 
 // 以 DeepSeek Harness 标准规范装配智能切片插件
 cordisCtx.plugin(MoneyPrinterSlicerPlugin, {
@@ -347,6 +346,21 @@ app.delete('/api/slicer/cases/:id', (c) => {
   return c.json({ code: 0 });
 });
 
+// DSH 全局调用 Trace 追踪查询
+app.get('/api/dsh/traces', (c) => {
+  const jobId = c.req.query('jobId');
+  const action = c.req.query('action');
+  const limit = parseInt(c.req.query('limit') || '50', 10);
+  const traces = cordisCtx.tracer.list({ jobId, action, limit });
+  return c.json({ code: 0, data: traces });
+});
+
+app.get('/api/dsh/traces/:traceId', (c) => {
+  const trace = cordisCtx.tracer.get(c.req.param('traceId'));
+  if (!trace) return c.json({ code: 404, error: 'Trace 不存在' }, 404);
+  return c.json({ code: 0, data: trace });
+});
+
 // 分析进度 (内存态，供前端轮询展示 Loading 步骤)
 const slicerProgress = new Map<string, { step: number; label: string; done: boolean }>();
 app.get('/api/slicer/progress/:jobId', (c) => {
@@ -419,13 +433,15 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
     }
 
     if (!analysisResult) {
-      // 执行真实 FFmpeg 抽音频 -> OSS 上传 -> DashScope Paraformer 转写 -> Qwen 语义高光挖掘
+      // 执行真实 FFmpeg 抽音频 -> OSS 上传 -> DashScope Paraformer 转写 -> Qwen 语义高光挖掘 (全部走 DSH 微内核)
       analysisResult = await runFullASRWorkflow(
+        cordisCtx,
         savedFilePath,
         fileId,
         originalName,
         videoUrl,
-        (step, label) => { if (jobId) slicerProgress.set(jobId, { step, label, done: false }); }
+        (step, label) => { if (jobId) slicerProgress.set(jobId, { step, label, done: false }); },
+        jobId
       );
       // 写入持久化缓存
       fs.writeFileSync(cachePath, JSON.stringify(analysisResult, null, 2), 'utf-8');

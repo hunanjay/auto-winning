@@ -20,7 +20,12 @@ import {
   Loader2,
   Check,
   FolderOpen,
-  Trash2
+  Trash2,
+  Terminal,
+  X,
+  ChevronRight,
+  ChevronDown,
+  Copy
 } from 'lucide-react';
 
 export default function VideoSlicerStudio({ onAddToast }) {
@@ -93,6 +98,9 @@ export default function VideoSlicerStudio({ onAddToast }) {
 
   const [cases, setCases] = useState([]);
   const [casesOpen, setCasesOpen] = useState(false);
+  const [traces, setTraces] = useState([]);
+  const [tracesOpen, setTracesOpen] = useState(false);
+  const [expandedTraceId, setExpandedTraceId] = useState(null);
   const [products, setProducts] = useState([]);
   const [productFilter, setProductFilter] = useState(-1); // -1 = 全部产品
   const [activeClip, setActiveClip] = useState(clips[0]);
@@ -138,6 +146,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
       .catch(() => {});
 
     loadCases();
+    loadTraces();
 
     // 检查 MoneyPrinter 引擎状态
     fetch('http://localhost:3001/api/slicer/status')
@@ -149,6 +158,20 @@ export default function VideoSlicerStudio({ onAddToast }) {
       })
       .catch(() => {});
   }, []);
+
+  const loadTraces = () => {
+    fetch('http://localhost:3001/api/dsh/traces')
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.code === 0 && res.data) {
+          setTraces(res.data);
+          if (res.data.length > 0 && !expandedTraceId) {
+            setExpandedTraceId(res.data[0].traceId);
+          }
+        }
+      })
+      .catch(() => {});
+  };
 
   // 案例库：拉取 / 载入 / 删除
   const loadCases = () =>
@@ -280,6 +303,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
           setActiveClip(json.data.clips[0]);
         }
         loadCases();
+        loadTraces();
         onAddToast && onAddToast(`已完成语音转文字及 Qwen 智能高光拆条分析，探测到 ${json.data.clips.length} 个转化高光段`);
       } else {
         throw new Error(json.error || '视频解析失败');
@@ -481,6 +505,14 @@ export default function VideoSlicerStudio({ onAddToast }) {
         </div>
 
         <div className="flex items-center gap-3">
+                    <button
+            onClick={() => { setTracesOpen(!tracesOpen); loadTraces(); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-2xs"
+            title="查看 DeepSeek Harness (DSH) 底层大模型调用 Trace 链"
+          >
+            <Terminal className="w-3.5 h-3.5 text-blue-600" />
+            <span>DSH Trace ({traces.length})</span>
+          </button>
           <div className="relative">
             <button
               onClick={() => { setCasesOpen(!casesOpen); loadCases(); }}
@@ -898,6 +930,130 @@ export default function VideoSlicerStudio({ onAddToast }) {
           )}
         </div>
       </div>
+
+      {/* DSH 全局调用 Trace 追踪抽屉 */}
+      {tracesOpen && (
+        <div className="fixed inset-y-0 right-0 w-[520px] bg-white border-l border-neutral-200 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="h-14 border-b border-neutral-200 px-5 flex items-center justify-between bg-neutral-50/70 shrink-0">
+            <div className="flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-blue-600" />
+              <h3 className="text-sm font-semibold text-neutral-900">DeepSeek Harness · AI Trace 追踪</h3>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-mono">
+                {traces.length} 条记录
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadTraces}
+                className="px-2 py-1 rounded text-xs text-neutral-500 hover:text-neutral-800 hover:bg-neutral-200/60"
+              >
+                刷新
+              </button>
+              <button
+                onClick={() => setTracesOpen(false)}
+                className="p-1 rounded text-neutral-400 hover:text-neutral-800 hover:bg-neutral-200/60"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fafafa]">
+            {traces.length === 0 ? (
+              <div className="py-16 text-center text-xs text-neutral-400">
+                暂无 DSH Trace 记录，导入视频或执行分析后将实时记录每一笔 LLM 输入与输出。
+              </div>
+            ) : (
+              traces.map((tr) => {
+                const isExpanded = expandedTraceId === tr.traceId;
+                const sec = (tr.latencyMs / 1000).toFixed(2);
+                return (
+                  <div
+                    key={tr.traceId}
+                    className="border border-neutral-200 rounded-xl bg-white shadow-2xs overflow-hidden transition-all text-xs"
+                  >
+                    <div
+                      onClick={() => setExpandedTraceId(isExpanded ? null : tr.traceId)}
+                      className="p-3.5 flex items-start justify-between gap-3 cursor-pointer hover:bg-neutral-50/80"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`w-2 h-2 rounded-full ${tr.status === 'success' ? 'bg-emerald-500' : tr.status === 'retry' ? 'bg-amber-500' : 'bg-red-500'}`} />
+                          <span className="font-semibold text-neutral-900 font-mono">{tr.action}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-mono">
+                            {tr.model}
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-mono text-neutral-400 truncate">
+                          {tr.traceId} · {new Date(tr.createdAt).toLocaleTimeString()}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono text-neutral-500 text-[11px]">{sec}s</span>
+                        {isExpanded ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-neutral-100 p-3.5 bg-neutral-50/50 space-y-3 font-mono text-[11px]">
+                        <div>
+                          <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-1 flex items-center justify-between">
+                            <span>Messages (Prompt)</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(JSON.stringify(tr.messages, null, 2));
+                                onAddToast && onAddToast('已复制 Prompt');
+                              }}
+                              className="text-neutral-400 hover:text-neutral-700 flex items-center gap-1"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>复制</span>
+                            </button>
+                          </div>
+                          <div className="max-h-48 overflow-y-auto p-2.5 rounded bg-neutral-900 text-neutral-200 whitespace-pre-wrap leading-relaxed text-[11px]">
+                            {tr.messages?.map((m, mi) => (
+                              <div key={mi} className="mb-2">
+                                <span className="text-blue-400 font-bold">[{m.role.toUpperCase()}]: </span>
+                                <span>{m.content}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-1 flex items-center justify-between">
+                            <span>Raw Model Output</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(tr.rawOutput || '');
+                                onAddToast && onAddToast('已复制输出内容');
+                              }}
+                              className="text-neutral-400 hover:text-neutral-700 flex items-center gap-1"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>复制</span>
+                            </button>
+                          </div>
+                          <div className="max-h-40 overflow-y-auto p-2.5 rounded bg-neutral-900 text-emerald-400 whitespace-pre-wrap leading-relaxed text-[11px]">
+                            {tr.rawOutput || '无原始文本'}
+                          </div>
+                        </div>
+
+                        {tr.error && (
+                          <div className="p-2 rounded bg-red-50 border border-red-200 text-red-700 text-[11px]">
+                            错误: {tr.error}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

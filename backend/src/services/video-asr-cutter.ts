@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import OSS from 'ali-oss';
 import dotenv from 'dotenv';
+import { Context } from '@deepseek-ai/cordis';
 
 dotenv.config();
 
@@ -248,42 +249,36 @@ const fmtTime = (s: number) => {
   return `${m}:${sec}`;
 };
 
-async function callQwenJSON(systemPrompt: string, userPrompt: string): Promise<any> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await callQwenJSONOnce(
-        systemPrompt + '\n注意：JSON 字符串值内部不得出现英文双引号，需要引用请用中文引号“”。',
-        userPrompt
-      );
-    } catch (err) {
-      lastErr = err;
-      console.warn(`Qwen JSON 解析失败，重试 ${attempt + 1}/3`);
-    }
+/**
+ * 通过 DeepSeek Harness (DSH) 插件微内核调用 LLM 并自动记录 Trace
+ */
+async function callDshJSON(
+  ctx: Context,
+  action: string,
+  systemPrompt: string,
+  userPrompt: string,
+  jobId?: string
+): Promise<any> {
+  if (!ctx.aliyunChat) {
+    throw new Error('DeepSeek Harness 未装配 aliyunChat 插件');
   }
-  throw lastErr;
-}
 
-async function callQwenJSONOnce(systemPrompt: string, userPrompt: string): Promise<any> {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
-  const baseUrl = process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: process.env.DEFAULT_MODEL || 'qwen3.6-flash',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
+  return await ctx.aliyunChat.chatJSON(
+    [
+      {
+        role: 'system',
+        content: `${systemPrompt}\n注意：JSON 字符串值内部不得出现英文双引号，需要引用请用中文引号“”。`,
+      },
+      { role: 'user', content: userPrompt },
+    ],
+    {
+      plugin: 'dsh:slicer:llm',
+      action,
+      jobId,
       temperature: 0.1,
-    }),
-  });
-  const completion: any = await response.json();
-  const content: string = completion.choices?.[0]?.message?.content || '';
-  const match = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
-  if (!match) throw new Error(`Qwen 未返回标准 JSON: ${content.slice(0, 300)}`);
-  return JSON.parse(match[0]);
+      maxAttempts: 3,
+    }
+  );
 }
 
 /**
@@ -312,10 +307,12 @@ function formatSentences(sentences: SentenceItem[]): string {
 }
 
 /**
- * 阶段 1：产品分段。识别整场直播中依次讲解的各个产品及其起止句子编号
+ * 阶段 1：产品分段。识别整场直播中依次讲解的各个产品及其起止句子编号 (走 DSH 微内核)
  */
 export async function segmentProducts(
-  sentences: SentenceItem[]
+  ctx: Context,
+  sentences: SentenceItem[],
+  jobId?: string
 ): Promise<{ productName: string; sellingPoints: string; startIdx: number; endIdx: number }[]> {
   const systemPrompt = `你是直播带货内容分析师。输入是一场直播的带时间戳逐句口播 (每句有 #编号)。
 任务：识别主播依次讲解了哪几个不同的产品，并给出每个产品对应的起止句子编号。
@@ -328,7 +325,7 @@ export async function segmentProducts(
 6. 只输出 JSON 数组，不要任何解释。
 格式：[{"productName":"产品名","sellingPoints":"一句话核心卖点","startIdx":0,"endIdx":12}]`;
 
-  const result = await callQwenJSON(systemPrompt, formatSentences(sentences));
+  const result = await callDshJSON(ctx, 'segmentProducts', systemPrompt, formatSentences(sentences), jobId);
   const maxIdx = sentences.length - 1;
   const segs = (result as any[])
     .map((r) => ({
@@ -345,13 +342,15 @@ export async function segmentProducts(
 }
 
 /**
- * 阶段 2：在单个产品段内，按带货环节各切出一条切片
+ * 阶段 2：在单个产品段内，按带货环节各切出一条切片 (走 DSH 微内核)
  */
 async function clipsForProduct(
+  ctx: Context,
   productIndex: number,
   seg: { productName: string; sellingPoints: string; startIdx: number; endIdx: number },
   sentences: SentenceItem[],
-  totalDuration: number
+  totalDuration: number,
+  jobId?: string
 ): Promise<HighlightClip[]> {
   const sub = sentences.slice(seg.startIdx, seg.endIdx + 1);
   if (!sub.length) return [];
@@ -371,7 +370,13 @@ async function clipsForProduct(
 格式：[{"stage":"开场引入","startIdx":0,"endIdx":2,"score":90,"hook":"原话","summary":"一句话描述"}]`;
 
   const local = sub.map((s, i) => `#${i} [${(s.begin_time / 1000).toFixed(1)}s-${(s.end_time / 1000).toFixed(1)}s] ${s.text}`).join('\n');
-  const raw = (await callQwenJSON(systemPrompt, `产品：${seg.productName}\n核心卖点：${seg.sellingPoints}\n\n${local}`)) as any[];
+  const raw = (await callDshJSON(
+    ctx,
+    `clipsForProduct:${seg.productName}`,
+    systemPrompt,
+    `产品：${seg.productName}\n核心卖点：${seg.sellingPoints}\n\n${local}`,
+    jobId
+  )) as any[];
 
   const seen = new Set<string>();
   const clips: HighlightClip[] = [];
@@ -409,20 +414,22 @@ async function clipsForProduct(
 }
 
 /**
- * 两阶段高光分析：先按产品分段，再逐产品按带货环节切片
+ * 两阶段高光分析：先按产品分段，再逐产品按带货环节切片 (走 DSH 微内核)
  */
 export async function analyzeProductsAndClips(
+  ctx: Context,
   sentences: SentenceItem[],
-  totalDuration: number
+  totalDuration: number,
+  jobId?: string
 ): Promise<{ products: ProductSegment[]; clips: HighlightClip[] }> {
-  const segs = await segmentProducts(sentences);
+  const segs = await segmentProducts(ctx, sentences, jobId);
   const products: ProductSegment[] = [];
   const clips: HighlightClip[] = [];
 
   for (let i = 0; i < segs.length; i++) {
     const seg = segs[i];
     const range = snapToSentences(sentences, sentences[seg.startIdx].begin_time / 1000, sentences[seg.endIdx].end_time / 1000);
-    const productClips = await clipsForProduct(i, seg, sentences, totalDuration).catch((err) => {
+    const productClips = await clipsForProduct(ctx, i, seg, sentences, totalDuration, jobId).catch((err) => {
       console.warn(`产品 ${seg.productName} 切片分析失败:`, err);
       return [] as HighlightClip[];
     });
@@ -445,11 +452,13 @@ export async function analyzeProductsAndClips(
  * 6. 执行全链路 ASR + Qwen 高光拆条完整工作流
  */
 export async function runFullASRWorkflow(
+  ctx: Context,
   videoPath: string,
   videoId: string,
   fileName: string,
   videoUrl: string,
-  onProgress: (step: number, label: string) => void = () => {}
+  onProgress: (step: number, label: string) => void = () => {},
+  jobId?: string
 ): Promise<VideoAnalysisResult> {
   // Step 1: probe 视频时长和分辨率
   onProgress(0, '探测视频信息');
@@ -473,8 +482,8 @@ export async function runFullASRWorkflow(
   }
 
   onProgress(4, '识别产品并规划切片');
-  // Step 5: 两阶段分析 (产品分段 -> 逐产品按环节切片)
-  const { products, clips } = await analyzeProductsAndClips(transcripts.sentences, duration);
+  // Step 5: 两阶段分析 (走 DSH 微内核，自动记录 Trace)
+  const { products, clips } = await analyzeProductsAndClips(ctx, transcripts.sentences, duration, jobId);
 
   return {
     videoId,
