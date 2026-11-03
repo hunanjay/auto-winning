@@ -87,6 +87,17 @@ const createSamplePng = (type) => {
     ctx.font = '900 42px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('NEXUS', 300, 480);
+  } else if (type === 'logo_tuantuan') {
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, 600, 600);
+    const img = new Image();
+    img.src = '/logo.png';
+    if (img.complete && img.naturalWidth) {
+      const scale = Math.min(540 / img.naturalWidth, 400 / img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+      ctx.drawImage(img, (600 - w) / 2, (600 - h) / 2, w, h);
+    }
   } else if (type === 'serum') {
     ctx.fillStyle = '#FAF5FF';
     ctx.fillRect(0, 0, 600, 600);
@@ -141,10 +152,10 @@ const createSamplePng = (type) => {
 const QUICK_EXAMPLES = [
   {
     id: '3c_gift',
-    name: '充电宝+Logo',
-    types: ['powerbank', 'logo_nexus'],
+    name: '充电宝+团团Logo',
+    types: ['powerbank', 'logo_tuantuan'],
     prompt:
-      '将图2的Logo以金属激光镭雕工艺印制在图1充电宝正面中上方位置，放置在北美黑胡桃木办公桌上，午后百叶窗柔和暖光，旁边有咖啡杯与金属钢笔，真实接触阴影，4K商业摄影'
+      '将图2的“团团有限公司”Logo以彩色丝印工艺印制在图1充电宝正面中上方位置，放置在北美黑胡桃木办公桌上，午后百叶窗柔和暖光，旁边有咖啡杯与金属钢笔，真实接触阴影，4K商业摄影'
   },
   {
     id: 'beauty_serum',

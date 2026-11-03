@@ -199,7 +199,7 @@ export default function App() {
   const currentTabPath = TAB_ROUTES[activeTab] || '/image';
 
   useEffect(() => {
-    document.title = currentTabLabel ? `auto-winning · ${currentTabLabel}` : 'auto-winning';
+    document.title = currentTabLabel ? `团团 · ${currentTabLabel}` : '团团有限公司 · AI 电商生成中心';
   }, [currentTabLabel]);
 
   const handleAddProduct = (newProd) => {
@@ -325,20 +325,14 @@ export default function App() {
                 setActiveTab('image');
               }
             }}
-            className="flex items-center gap-2.5 px-1 py-0.5 cursor-pointer group"
-            title="auto-winning (/image)"
+            className="flex items-center justify-center px-1 py-1 cursor-pointer group rounded-xl hover:bg-slate-50 transition-colors"
+            title="团团有限公司 (/image)"
           >
-            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs group-hover:bg-indigo-600 transition-colors shrink-0">
-              <Sparkles className="w-4 h-4 text-indigo-400" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-extrabold text-slate-900 tracking-tight leading-none">
-                auto-winning
-              </div>
-              <div className="text-[10px] text-slate-400 mt-1 font-medium truncate">
-                电商生成中心
-              </div>
-            </div>
+            <img
+              src="/logo.png"
+              alt="团团有限公司"
+              className="h-9 w-auto max-w-[156px] object-contain transition-transform duration-200 group-hover:scale-105"
+            />
           </a>
 
           {/* Quick + New Template Button */}
@@ -443,10 +437,16 @@ export default function App() {
 
       {/* Right Main Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Header */}
         <header className="h-14 shrink-0 px-6 bg-white/80 backdrop-blur-md border-b border-slate-200/70 flex items-center justify-between z-20">
           <div className="flex items-center gap-2.5">
+            <img
+              src="/logo-icon.png"
+              alt="团团"
+              className="w-6 h-6 rounded-md object-contain"
+            />
             <span className="text-sm font-extrabold tracking-tight text-slate-900">
-              auto-winning
+              团团有限公司
             </span>
             <span className="text-slate-300">/</span>
             <span className="text-sm font-bold text-slate-700 tracking-tight">
