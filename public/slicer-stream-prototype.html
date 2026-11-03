@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>智能切片 · 渐进式流式加载原型演示</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; border-color: rgba(37, 99, 235, 0.4); }
+      50% { opacity: 0.85; border-color: rgba(37, 99, 235, 0.9); }
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .animate-shimmer {
+      animation: shimmer 1.8s infinite;
+    }
+    .pulse-card {
+      animation: pulse-subtle 2s infinite ease-in-out;
+    }
+    .fade-in-up {
+      animation: fadeInUp 0.45s ease-out forwards;
+    }
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body class="bg-[#f8f9fb] text-neutral-800 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- 顶部导航栏与控制按钮 -->
+  <header class="h-16 border-b border-neutral-200 bg-white/95 backdrop-blur px-6 flex items-center justify-between shrink-0 sticky top-0 z-30">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 font-bold text-base text-neutral-900 tracking-tight">
+        <svg class="w-5 h-5 text-neutral-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="6" cy="6" r="3"></circle>
+          <circle cx="6" cy="18" r="3"></circle>
+          <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+          <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+          <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+        </svg>
+        <span>智能切片流水线</span>
+      </div>
+
+      <div class="h-4 w-px bg-neutral-200 mx-1"></div>
+
+      <!-- 核心流光进度胶囊 (Progress Pill) -->
+      <div id="statusPill" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200/80 text-xs font-medium text-blue-900 transition-all duration-300">
+        <span class="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
+        <span id="statusText">准备启动流式拆条引擎...</span>
+        <span id="elapsedTimer" class="font-mono text-blue-600/80 text-[11px]">(0s)</span>
+      </div>
+    </div>
+
+    <!-- 交互控制器：重新演示与状态切换 -->
+    <div class="flex items-center gap-3">
+      <span class="text-xs text-neutral-400">交互演示模式</span>
+      <button id="btnReplay" onclick="startSimulation()" class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-black text-white text-xs font-medium transition shadow-sm active:scale-95">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+          <path d="M21 3v5h-5"></path>
+          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+          <path d="M3 21v-5h5"></path>
+        </svg>
+        <span>重新模拟流式处理</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 顶部流光细进度条 -->
+  <div class="h-0.5 w-full bg-neutral-100 overflow-hidden relative">
+    <div id="topProgressBar" class="h-full bg-blue-600 transition-all duration-500 w-0"></div>
+    <div id="topShimmer" class="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent w-full animate-shimmer"></div>
+  </div>
+
+  <!-- 主体工作台区域 -->
+  <main class="flex-1 flex overflow-hidden p-6 gap-6 max-w-[1600px] w-full mx-auto">
+
+    <!-- 左侧：长视频预览与渐进式时间轴 -->
+    <section class="flex-1 flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-6 overflow-hidden">
+      <!-- 视频标题栏 -->
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono">1080x1920</span>
+            <h2 class="text-sm font-semibold text-neutral-900">20261102_淘宝双11大促带货直播回放.mp4</h2>
+          </div>
+          <p class="text-xs text-neutral-400 mt-1">视频总时长: 01:50 · 包含多个带货单品</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span id="stageBadge" class="text-xs px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/60 font-medium">
+            等待任务接入
+          </span>
+        </div>
+      </div>
+
+      <!-- 模拟视频播放视窗 -->
+      <div class="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none">
+        <!-- 画面中心状态提示 -->
+        <div id="playerCenterOverlay" class="text-center p-6 max-w-md">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/10 backdrop-blur mb-3">
+            <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </div>
+          <p id="playerSubtitle" class="text-sm font-medium text-neutral-200">视频流媒体已就绪，正在实时监听分析流水线...</p>
+        </div>
+
+        <!-- 卡拉OK实时口播台词浮层 -->
+        <div id="karaokeSubtitle" class="absolute bottom-6 left-6 right-6 hidden justify-center pointer-events-none">
+          <div class="max-w-xl px-4 py-2 rounded-xl bg-black/80 backdrop-blur text-white text-xs font-medium text-center shadow-lg border border-white/10">
+            <span class="text-neutral-400 mr-2 font-mono">当前口播:</span>
+            <span id="karaokeText">正在获取语音识别文字...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 渐进式多产品与切片时间轴轨 -->
+      <div class="mt-6 p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
+        <div class="flex items-center justify-between mb-2 text-xs">
+          <span class="font-medium text-neutral-700 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-neutral-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+            多产品时空热度分布轨
+          </span>
+          <span id="timelineProductCount" class="text-neutral-400 text-[11px]">未识别到产品</span>
+        </div>
+
+        <!-- 轨 1: 产品分段色带 (阶段 1 实时挂载) -->
+        <div class="relative h-6 bg-neutral-200/70 rounded-md overflow-hidden mb-2 border border-neutral-300/40">
+          <div id="emptyProductPlaceholder" class="absolute inset-0 flex items-center justify-center text-[11px] text-neutral-400 italic">
+            等待第一阶段产品识别分段...
+          </div>
+          <div id="productBandsContainer" class="absolute inset-0 hidden">
+            <!-- 动态塞入产品色带 -->
+          </div>
+        </div>
+
+        <!-- 轨 2: 细分环节切片色块 (阶段 2 实时挂载) -->
+        <div class="relative h-8 bg-neutral-100 rounded-md overflow-hidden border border-neutral-200 flex items-center">
+          <div id="emptyClipPlaceholder" class="w-full text-center text-[11px] text-neutral-400 italic">
+            等待第二阶段逐产品切片规划...
+          </div>
+          <div id="clipBlocksContainer" class="absolute inset-0 hidden">
+            <!-- 动态塞入切片色块 -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右侧：渐进式生成列表与安全冻结展示区 -->
+    <aside class="w-[460px] flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden shrink-0">
+      <!-- 列表标题栏 -->
+      <div class="p-4 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/50">
+        <div class="flex items-center gap-2">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-700">实时产出切片卡片</h3>
+          <span id="clipCounter" class="text-xs px-2 py-0.5 rounded-full bg-neutral-200/70 text-neutral-700 font-semibold">0 条</span>
+        </div>
+
+        <!-- 安全锁定状态标签 -->
+        <div id="lockStatusPill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-medium">
+          <svg class="w-3 h-3 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span id="lockStatusLabel">安全冻结：处理中禁止操作</span>
+        </div>
+      </div>
+
+      <!-- 实时流式切片容器 -->
+      <div id="cardsContainer" class="flex-1 overflow-y-auto p-4 space-y-3 relative">
+        <div id="initialWaitingBox" class="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400">
+          <div class="w-10 h-10 rounded-full border-2 border-neutral-200 border-t-blue-600 animate-spin mb-3"></div>
+          <p class="text-xs font-medium text-neutral-600">正在与后台 AI 流水线建立连接</p>
+          <p class="text-[11px] text-neutral-400 mt-1">处理完毕的片段将实时在此处逐步浮现</p>
+        </div>
+      </div>
+
+      <!-- 底部批量导出栏 -->
+      <div class="p-4 border-t border-neutral-200 bg-neutral-50/70 flex items-center justify-between">
+        <div class="text-xs text-neutral-500">
+          <span id="bottomReadyText">等待所有产品切片生成完成...</span>
+        </div>
+
+        <button id="btnBatchExport" disabled class="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-300 text-neutral-500 text-xs font-medium cursor-not-allowed transition shadow-2xs">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span id="btnBatchExportLabel">流水线处理中 (锁定)</span>
+        </button>
+      </div>
+    </aside>
+  </main>
+
+  <!-- 轻提示 (Toast) -->
+  <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 px-4 py-2.5 rounded-xl bg-neutral-900 text-white text-xs font-medium shadow-xl flex items-center gap-2 z-50 pointer-events-none">
+    <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <span id="toastMsg">提示内容</span>
+  </div>
+
+  <script>
+    // 模拟数据源
+    const PRODUCTS_MOCK = [
+      { id: 0, name: "玻尿酸补水面膜", color: "#2563eb", start: 0, end: 44, widthPct: 40, points: "三重玻尿酸高保湿，敷后水分飙升" },
+      { id: 1, name: "清爽防晒喷雾", color: "#db2777", start: 44, end: 82, widthPct: 35, points: "SPF50高倍防护，轻薄防水不泛白" },
+      { id: 2, name: "温和氨基酸洁面", color: "#059669", start: 82, end: 110, widthPct: 25, points: "绵密微米泡沫，温和净澈不紧绷" }
+    ];
+
+    const CLIPS_STREAM = [
+      // 产品 0 切片
+      { prodIdx: 0, stage: "开场引入", time: "00:00 - 00:14", duration: 14, score: 88, hook: "一片就能给皮肤喝饱水，今天必须抢！", text: "家人们晚上好，先看第一款玻尿酸补水面膜..." },
+      { prodIdx: 0, stage: "卖点讲解", time: "00:14 - 00:24", duration: 10, score: 92, hook: "含有三重玻尿酸精华，敷完十分钟脸蛋饱满水光！", text: "它含有三重玻尿酸精华，敷完十分钟皮肤明显更饱满..." },
+      { prodIdx: 0, stage: "效果演示", time: "00:24 - 00:34", duration: 10, score: 96, hook: "敷前水分24%，敷完直接飙到72%，仪器实测！", text: "你们看，敷之前水分值二十四，敷完直接到七十二..." },
+      { prodIdx: 0, stage: "价格逼单", time: "00:34 - 00:44", duration: 10, score: 98, hook: "平时一盒150，今天只要69还加送2片，手慢无！", text: "这一盒十片平时一百五，今天直播间只要六十九..." },
+
+      // 产品 1 切片
+      { prodIdx: 1, stage: "开场引入", time: "00:44 - 00:52", duration: 8, score: 90, hook: "夏天出门最怕晒黑！第二款防晒直接锁死！", text: "好，面膜先到这，接下来看第二款防晒喷雾..." },
+      { prodIdx: 1, stage: "卖点讲解", time: "00:52 - 01:02", duration: 10, score: 91, hook: "SPF50超高倍，轻薄完全不油腻，随时随地喷！", text: "这款防晒喷雾 SPF50，轻薄不油腻，随时补涂..." },
+      { prodIdx: 1, stage: "效果演示", time: "01:02 - 01:12", duration: 10, score: 95, hook: "现场喷手臂，成膜极快，防水防汗一点都不假白！", text: "我给大家现场演示，喷在手臂上，清爽不泛白..." },
+      { prodIdx: 1, stage: "价格逼单", time: "01:12 - 01:22", duration: 10, score: 97, hook: "原价160两瓶，今天99包邮再送便携收纳袋！", text: "两瓶装原价一百六，今天九十九包邮，还送收纳袋..." },
+
+      // 产品 2 切片
+      { prodIdx: 2, stage: "开场引入", time: "01:22 - 01:30", duration: 8, score: 89, hook: "洗完脸紧绷起皮的看过来！压轴氨基酸洁面！", text: "防晒喷雾说完了，最后一款是我们的氨基酸洗面奶..." },
+      { prodIdx: 2, stage: "卖点讲解", time: "01:30 - 01:40", duration: 10, score: 93, hook: "泡沫像云朵一样绵密，深层清洁而且巨温和！", text: "很多姐妹洗完脸紧绷，这款洗面奶泡沫绵密洗完不紧绷..." },
+      { prodIdx: 2, stage: "效果演示", time: "01:40 - 01:50", duration: 10, score: 95, hook: "挤一泵温水一冲即净，毛孔干干净净三二一上链接！", text: "我挤一泵给大家看，揉出泡沫特别细腻，温水一冲就干净..." }
+    ];
+
+    let timerInterval = null;
+    let secondsElapsed = 0;
+    let isPipelineLocked = true; // 状态锁定中
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 2500);
+    }
+
+    // 尝试点击受保护卡片时的交互反馈
+    function handleCardAttemptClick(title) {
+      if (isPipelineLocked) {
+        showToast("切片流水线处理中，暂时冻结交互以避免打断任务...");
+      } else {
+        showToast(`已定位到切片: ${title}`);
+      }
+    }
+
+    function startSimulation() {
+      // 1. 初始化重置
+      clearInterval(timerInterval);
+      secondsElapsed = 0;
+      isPipelineLocked = true;
+
+      document.getElementById('cardsContainer').innerHTML = `
+        <div id="initialWaitingBox" class="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400">
+          <div class="w-10 h-10 rounded-full border-2 border-neutral-200 border-t-blue-600 animate-spin mb-3"></div>
+          <p class="text-xs font-medium text-neutral-600">正在与后台 AI 流水线建立连接</p>
+          <p class="text-[11px] text-neutral-400 mt-1">处理完毕的片段将实时在此处逐步浮现</p>
+        </div>
+      `;
+
+      document.getElementById('productBandsContainer').innerHTML = '';
+      document.getElementById('productBandsContainer').classList.add('hidden');
+      document.getElementById('emptyProductPlaceholder').classList.remove('hidden');
+
+      document.getElementById('clipBlocksContainer').innerHTML = '';
+      document.getElementById('clipBlocksContainer').classList.add('hidden');
+      document.getElementById('emptyClipPlaceholder').classList.remove('hidden');
+
+      document.getElementById('clipCounter').innerText = '0 条';
+      document.getElementById('timelineProductCount').innerText = '未识别到产品';
+      document.getElementById('stageBadge').innerText = 'Step 1: 探测与抽取音频';
+      document.getElementById('statusText').innerText = '正在执行 FFmpeg 提取 16kHz 单声道音频...';
+      document.getElementById('topProgressBar').style.width = '15%';
+
+      document.getElementById('lockStatusPill').className = 'flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-medium';
+      document.getElementById('lockStatusLabel').innerText = '安全冻结：处理中禁止操作';
+      document.getElementById('btnBatchExport').disabled = true;
+      document.getElementById('btnBatchExport').className = 'flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-200 text-neutral-400 text-xs font-medium cursor-not-allowed transition';
+      document.getElementById('btnBatchExportLabel').innerText = '流水线处理中 (锁定)';
+      document.getElementById('bottomReadyText').innerText = '正在实时流式生成切片...';
+
+      // 启动秒表
+      timerInterval = setInterval(() => {
+        secondsElapsed++;
+        document.getElementById('elapsedTimer').innerText = `(${secondsElapsed}s)`;
+      }, 1000);
+
+      // Timeline 步骤推进
+      // 步骤 1: ASR 识别就绪 (第 1.5s)
+      setTimeout(() => {
+        document.getElementById('stageBadge').innerText = 'Step 2: Paraformer ASR 识别完成';
+        document.getElementById('statusText').innerText = '已生成 12 句精确字级时间戳，正在进入 Qwen 产品语义分段...';
+        document.getElementById('topProgressBar').style.width = '35%';
+        document.getElementById('karaokeSubtitle').classList.remove('hidden');
+        document.getElementById('karaokeSubtitle').classList.add('flex');
+        document.getElementById('karaokeText').innerText = '家人们晚上好，欢迎来到直播间，今天一共给大家准备了三款爆品...';
+      }, 1500);
+
+      // 步骤 2: 产品分段完成，时间轴色带点亮 (第 3.2s)
+      setTimeout(() => {
+        document.getElementById('stageBadge').innerText = 'Step 3: 成功划分 3 个单品区间';
+        document.getElementById('statusText').innerText = '识别到【面膜】、【防晒喷雾】、【洗面奶】，正在逐产品切片...';
+        document.getElementById('topProgressBar').style.width = '55%';
+        document.getElementById('timelineProductCount').innerText = '已划分 3 个商品区间';
+
+        document.getElementById('emptyProductPlaceholder').classList.add('hidden');
+        const pContainer = document.getElementById('productBandsContainer');
+        pContainer.classList.remove('hidden');
+
+        PRODUCTS_MOCK.forEach(p => {
+          const div = document.createElement('div');
+          div.className = 'absolute top-0 bottom-0 text-[11px] text-white font-medium truncate px-2 flex items-center transition-all duration-500';
+          div.style.left = `${(p.start / 110) * 100}%`;
+          div.style.width = `${p.widthPct}%`;
+          div.style.backgroundColor = p.color;
+          div.innerText = p.name;
+          pContainer.appendChild(div);
+        });
+
+        document.getElementById('emptyClipPlaceholder').classList.add('hidden');
+        document.getElementById('clipBlocksContainer').classList.remove('hidden');
+
+        // 清理等待框
+        document.getElementById('cardsContainer').innerHTML = '';
+      }, 3200);
+
+      // 步骤 3: 逐个切片流式“长出来” (从 4s 开始，每隔 500ms 刷出一张卡片)
+      CLIPS_STREAM.forEach((clip, index) => {
+        setTimeout(() => {
+          renderClipProgressively(clip, index + 1);
+        }, 3800 + index * 600);
+      });
+
+      // 步骤 4: 全部就绪，解冻安全锁 (第 11s)
+      const finishTime = 3800 + CLIPS_STREAM.length * 600 + 800;
+      setTimeout(() => {
+        isPipelineLocked = false;
+        clearInterval(timerInterval);
+
+        // 顶栏状态变绿
+        const pill = document.getElementById('statusPill');
+        pill.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-900 transition-all';
+        pill.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+          <span>全链路切片完成！已自动存入案例库</span>
+          <span class="font-mono text-emerald-700 text-[11px]">(用时 ${secondsElapsed}s)</span>
+        `;
+        document.getElementById('topProgressBar').style.width = '100%';
+        document.getElementById('topProgressBar').className = 'h-full bg-emerald-600 w-full transition-all duration-300';
+        document.getElementById('topShimmer').classList.add('hidden');
+
+        // 解冻卡片锁定样式
+        document.querySelectorAll('.clip-card').forEach(card => {
+          card.classList.remove('pulse-card', 'border-blue-300');
+          card.classList.add('border-neutral-200', 'hover:border-neutral-400');
+          const lockBadge = card.querySelector('.card-lock-badge');
+          if (lockBadge) lockBadge.remove();
+
+          const btn = card.querySelector('button');
+          btn.disabled = false;
+          btn.className = 'flex items-center gap-1 px-3 py-1 rounded-md bg-neutral-900 hover:bg-black text-white text-xs font-medium transition cursor-pointer';
+          btn.innerHTML = `
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>导出 MP4</span>
+          `;
+        });
+
+        // 解除锁定 Pill
+        const lockPill = document.getElementById('lockStatusPill');
+        lockPill.className = 'flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 font-medium';
+        lockPill.innerHTML = `
+          <svg class="w-3 h-3 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span>已解锁：自由试看与导出</span>
+        `;
+
+        // 底部批量导出恢复
+        const exportBtn = document.getElementById('btnBatchExport');
+        exportBtn.disabled = false;
+        exportBtn.className = 'flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-900 hover:bg-black text-white text-xs font-medium transition shadow-sm active:scale-95 cursor-pointer';
+        document.getElementById('btnBatchExportLabel').innerText = `一键导出全部 11 条切片`;
+        document.getElementById('bottomReadyText').innerText = `全部 3 个商品切片已准备完毕`;
+
+        showToast("切片流水线规划完成！卡片已全部解锁，可自由点击试看与下载。");
+      }, finishTime);
+    }
+
+    // 逐张卡片渲染（带有冻结态与呼吸微光）
+    function renderClipProgressively(clip, count) {
+      const container = document.getElementById('cardsContainer');
+      document.getElementById('clipCounter').innerText = `${count} 条`;
+
+      const prod = PRODUCTS_MOCK[clip.prodIdx];
+
+      // 1. 在时间轴细切片轨渲染对应色块
+      const clipBlocksContainer = document.getElementById('clipBlocksContainer');
+      const startPct = ((clip.time.split(' - ')[0].split(':').reduce((m, s) => Number(m)*60 + Number(s))) / 110) * 100;
+      const widthPct = (clip.duration / 110) * 100;
+
+      const block = document.createElement('div');
+      block.className = 'absolute top-1 bottom-1 rounded text-[10px] text-neutral-800 bg-white/90 border border-neutral-300 font-mono flex items-center justify-center overflow-hidden fade-in-up';
+      block.style.left = `${startPct}%`;
+      block.style.width = `${widthPct}%`;
+      block.title = `${prod.name} · ${clip.stage}`;
+      block.innerText = clip.stage;
+      clipBlocksContainer.appendChild(block);
+
+      // 2. 在右侧渲染卡片（冻结态）
+      const card = document.createElement('div');
+      card.className = 'clip-card fade-in-up pulse-card p-3.5 rounded-xl border border-blue-300 bg-white shadow-2xs relative overflow-hidden transition-all duration-300';
+      card.onclick = () => handleCardAttemptClick(`${prod.name} · ${clip.stage}`);
+
+      card.innerHTML = `
+        <!-- 冻结只读遮罩指示 -->
+        <div class="card-lock-badge absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-[10px] text-blue-700 font-medium">
+          <svg class="w-2.5 h-2.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+          <span>规划中 (只读)</span>
+        </div>
+
+        <div class="flex items-center gap-2 mb-1.5">
+          <span class="w-2 h-2 rounded-full" style="background: ${prod.color}"></span>
+          <span class="text-xs font-semibold text-neutral-900">${prod.name}</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-neutral-100 font-medium text-neutral-700">${clip.stage}</span>
+          <span class="text-xs font-mono text-emerald-600 font-semibold ml-auto">分值 ${clip.score}</span>
+        </div>
+
+        <!-- 钩子文案气泡 -->
+        <div class="p-2 rounded-lg bg-neutral-50 border border-neutral-200/60 text-xs font-medium text-neutral-800 mb-2">
+          ${clip.hook}
+        </div>
+
+        <!-- 台词摘录 -->
+        <p class="text-[11px] text-neutral-500 line-clamp-1 mb-2.5 leading-relaxed">
+          台词：${clip.text}
+        </p>
+
+        <div class="flex items-center justify-between pt-2 border-t border-neutral-100 text-[11px] text-neutral-400">
+          <span class="font-mono">${clip.time} (${clip.duration}s)</span>
+          <button disabled class="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-100 text-neutral-400 font-medium cursor-not-allowed text-xs">
+            <span>处理中...</span>
+          </button>
+        </div>
+      `;
+
+      container.appendChild(card);
+      // 自动滚到最新一张
+      container.scrollTop = container.scrollHeight;
+
+      // 更新卡拉OK文本为当前切片的钩子原话
+      document.getElementById('karaokeText').innerText = clip.hook;
+      document.getElementById('statusText').innerText = `正在流式生成【${prod.name}】的「${clip.stage}」切片...`;
+    }
+
+    // 页面载入后自动启动一次演示
+    window.addEventListener('DOMContentLoaded', () => {
+      startSimulation();
+    });
+  </script>
+</body>
+</html>
