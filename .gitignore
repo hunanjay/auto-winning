@@ -33,3 +33,6 @@ backend/.env.*
 backend/data/*.db
 backend/uploads/clips/*
 !backend/uploads/clips/.gitkeep
+backend/uploads/audios/*
+backend/uploads/cache/*
+backend/uploads/videos/upload-*

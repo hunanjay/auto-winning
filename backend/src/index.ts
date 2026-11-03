@@ -13,11 +13,10 @@ import { AliyunChatService } from './plugins/aliyun-chat.js';
 import * as MoneyPrinterSlicerPlugin from './plugins/moneyprinter-slicer.js';
 import * as GptImageStylePlugin from './plugins/gpt-image-style.js';
 import {
-  probeVideo,
-  generateVideoHighlights,
+  runFullASRWorkflow,
   cutVideoClip,
-  formatSecondsToTime,
-} from './services/video-cutter.js';
+  probeVideo,
+} from './services/video-asr-cutter.js';
 import { TemplateDao, ProductDao } from './db.js';
 
 // 1. 双重环境配置加载：优先读取项目根目录的 .env.local，其次读取 backend/.env
@@ -303,17 +302,18 @@ app.get('/uploads/*', async (c) => {
   });
 });
 
-// (1) 上传长视频并进行真实 AI 探测与高光划分
+// (1) 上传长视频并进行真实 ASR 语音识别 + Qwen 语义高光切片
 app.post('/api/slicer/upload-and-analyze', async (c) => {
   try {
     const uploadsDir = path.resolve(__dirname, '../uploads/videos');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+    const cacheDir = path.resolve(__dirname, '../uploads/cache');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
     let savedFilePath = '';
     let originalName = 'sample_livestream.mp4';
     let fileId = `vid-${Date.now()}`;
+    let isUpload = false;
 
     // 处理 multipart/form-data 或默认示例
     const contentType = c.req.header('content-type') || '';
@@ -330,20 +330,50 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
         // 将文件数据写入磁盘
         const arrayBuffer = await videoFile.arrayBuffer();
         fs.writeFileSync(savedFilePath, Buffer.from(arrayBuffer));
+        isUpload = true;
       }
     }
 
-    // 若未上传新文件，使用已就绪的 60s 真实直播样片
+    // 若未上传新文件，使用已就绪的 50s 真实直播口播带货样片
     if (!savedFilePath || !fs.existsSync(savedFilePath)) {
       savedFilePath = path.join(uploadsDir, 'sample_livestream.mp4');
       fileId = 'sample_livestream';
       originalName = '20261102_淘宝双11大促带货直播回放.mp4';
     }
 
-    // 真正调用 ffprobe 进行元数据探测
-    const meta = await probeVideo(savedFilePath);
-    const clips = generateVideoHighlights(meta);
     const savedFileName = path.basename(savedFilePath);
+    const videoUrl = `http://localhost:${port}/uploads/videos/${savedFileName}`;
+
+    // 检查是否有历史 ASR 分析缓存
+    const cacheKey = `${path.basename(savedFilePath, path.extname(savedFilePath))}.json`;
+    const cachePath = path.join(cacheDir, cacheKey);
+    let analysisResult;
+
+    if (!isUpload && fs.existsSync(cachePath)) {
+      try {
+        analysisResult = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+      } catch {
+        // 缓存失效则重新执行
+      }
+    }
+
+    if (!analysisResult) {
+      // 执行真实 FFmpeg 抽音频 -> OSS 上传 -> DashScope Paraformer 转写 -> Qwen 语义高光挖掘
+      analysisResult = await runFullASRWorkflow(
+        savedFilePath,
+        fileId,
+        originalName,
+        videoUrl
+      );
+      // 写入持久化缓存
+      fs.writeFileSync(cachePath, JSON.stringify(analysisResult, null, 2), 'utf-8');
+    }
+
+    const fmt = (s: number) => {
+      const m = Math.floor(s / 60).toString().padStart(2, '0');
+      const sec = Math.floor(s % 60).toString().padStart(2, '0');
+      return `${m}:${sec}`;
+    };
 
     return c.json({
       code: 0,
@@ -352,19 +382,19 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
           id: fileId,
           fileName: originalName,
           filePath: savedFilePath,
-          videoUrl: `http://localhost:${port}/uploads/videos/${savedFileName}`,
-          duration: meta.duration,
-          durationFormatted: formatSecondsToTime(meta.duration),
-          width: meta.width,
-          height: meta.height,
-          ratio: meta.ratio,
-          sizeBytes: meta.sizeBytes,
+          videoUrl,
+          duration: analysisResult.durationSeconds,
+          durationFormatted: fmt(analysisResult.durationSeconds),
+          width: analysisResult.width,
+          height: analysisResult.height,
+          ratio: `${analysisResult.width}:${analysisResult.height}`,
         },
-        clips,
+        transcripts: analysisResult.transcripts,
+        clips: analysisResult.clips,
       },
     });
   } catch (err: any) {
-    console.error('视频分析失败:', err);
+    console.error('视频全链路 ASR 分析失败:', err);
     return c.json({ code: 500, error: err.message }, 500);
   }
 });
@@ -393,9 +423,9 @@ app.post('/api/slicer/cut-clip', async (c) => {
     // 真正执行 FFmpeg 切片
     const result = await cutVideoClip(
       inputPath,
+      outputPath,
       Math.max(0, parseFloat(startSeconds || 0)),
-      Math.max(3, parseFloat(durationSeconds || 15)),
-      outputPath
+      Math.max(3, parseFloat(durationSeconds || 15))
     );
 
     return c.json({
@@ -435,9 +465,9 @@ app.post('/api/slicer/cut-all', async (c) => {
       const outputPath = path.join(clipsDir, outputFileName);
       await cutVideoClip(
         inputPath,
+        outputPath,
         clip.startSeconds,
-        clip.durationSeconds,
-        outputPath
+        clip.durationSeconds
       );
       results.push({
         id: clip.id,
