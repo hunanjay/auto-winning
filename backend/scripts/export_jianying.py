@@ -125,9 +125,22 @@ def export_draft(payload):
     draft_folder_path = os.path.join(root_path, draft_name)
     draft_id = str(uuid.uuid4()).upper()
 
+    # 解决 macOS 沙盒权限限制：剪映 App Store 版无法直接访问工作区 ~/ai_platform/ 路径
+    # 利用 macOS APFS 写时克隆 (Copy-on-Write, 耗时 0ms, 占 0 额外磁盘)，将原视频映射进草稿自带的 materials/ 目录
+    draft_materials_dir = os.path.join(draft_folder_path, "materials")
+    os.makedirs(draft_materials_dir, exist_ok=True)
+    video_filename = os.path.basename(video_path)
+    internal_video_path = os.path.join(draft_materials_dir, video_filename)
+    if not os.path.exists(internal_video_path):
+        try:
+            import subprocess
+            subprocess.run(["cp", "-c", video_path, internal_video_path], check=True)
+        except Exception:
+            shutil.copyfile(video_path, internal_video_path)
+
     # 1. 视频主轨道
     script.append_track(draft.TrackSpec(draft.TrackType.video, name="main_video"))
-    video_mat = draft.VideoMaterial(video_path)
+    video_mat = draft.VideoMaterial(internal_video_path)
 
     # 2. 字幕副轨道
     script.append_track(draft.TrackSpec(draft.TrackType.text, name="subtitles"))
