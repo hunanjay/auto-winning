@@ -521,8 +521,8 @@ export default function App() {
         </header>
 
         {/* Expansive Light Canvas */}
-        <main className={`flex-1 ${activeTab === 'image' ? 'overflow-hidden p-0' : 'overflow-y-auto px-6 pt-6'}`}>
-          <div className={activeTab === 'image' ? 'h-full w-full' : 'max-w-6xl mx-auto'}>
+        <main className={`flex-1 ${activeTab === 'image' || activeTab === 'slicer' ? 'overflow-hidden p-0' : 'overflow-y-auto px-6 pt-6'}`}>
+          <div className={activeTab === 'image' || activeTab === 'slicer' ? 'h-full w-full' : 'max-w-6xl mx-auto'}>
             {activeTab === 'chat' && (
               <AIChatStudio
                 selectedProduct={selectedProduct}

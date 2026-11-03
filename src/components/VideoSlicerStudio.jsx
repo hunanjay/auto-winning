@@ -92,19 +92,41 @@ export default function VideoSlicerStudio({ onAddToast }) {
   const timerIntervalRef = useRef(null);
   const eventSourceRef = useRef(null);
 
-  // 初始化加载
+  // 初始化加载：优先载入最近一次打开的案例或案例库首个长视频案例，保底载入默认样片
   useEffect(() => {
-    // 首次拉取已有切片案例
-    fetch('http://localhost:3001/api/slicer/upload-and-analyze', { method: 'POST' })
+    fetch('http://localhost:3001/api/slicer/cases')
       .then((r) => r.json())
-      .then((res) => {
-        if (res.code === 0 && res.data) {
-          applyAnalysisResult(res.data);
+      .then(async (res) => {
+        if (res.code === 0 && Array.isArray(res.data) && res.data.length > 0) {
+          setCases(res.data);
+          let savedId = null;
+          try {
+            savedId = localStorage.getItem('jm_last_slicer_case_id');
+          } catch {}
+          const targetCase =
+            res.data.find((c) => c.id === savedId) ||
+            res.data.find((c) => c.id !== 'sample_livestream') ||
+            res.data[0];
+          if (targetCase) {
+            const detailRes = await fetch(
+              `http://localhost:3001/api/slicer/cases/${encodeURIComponent(targetCase.id)}`
+            ).then((r) => r.json());
+            if (detailRes.code === 0 && detailRes.data) {
+              applyAnalysisResult(detailRes.data);
+              return;
+            }
+          }
+        }
+        // 保底拉取默认切片案例
+        const fallback = await fetch('http://localhost:3001/api/slicer/upload-and-analyze', {
+          method: 'POST'
+        }).then((r) => r.json());
+        if (fallback.code === 0 && fallback.data) {
+          applyAnalysisResult(fallback.data);
         }
       })
       .catch(() => {});
 
-    loadCases();
     loadTraces();
 
     fetch('http://localhost:3001/api/slicer/status')
@@ -141,7 +163,12 @@ export default function VideoSlicerStudio({ onAddToast }) {
       .catch(() => {});
 
   const applyAnalysisResult = (data) => {
-    if (data.video) setVideoData(data.video);
+    if (data.video) {
+      setVideoData(data.video);
+      try {
+        localStorage.setItem('jm_last_slicer_case_id', data.video.id);
+      } catch {}
+    }
     if (data.transcripts) {
       setTranscripts(data.transcripts);
       if (data.transcripts.sentences?.length > 0) {
@@ -151,10 +178,25 @@ export default function VideoSlicerStudio({ onAddToast }) {
     const prods = data.products || [];
     setProducts(prods);
     setProductFilter(-1);
+    setCollapsedProducts({});
     if (data.clips?.length) {
+      const firstClip = data.clips[0];
       setClips(data.clips);
-      setActiveClip(data.clips[0]);
+      setActiveClip(firstClip);
+      const startSec = firstClip.startSeconds || 0;
+      setCurrentTime(startSec);
+      if (videoRef.current) {
+        videoRef.current.currentTime = startSec;
+      }
+      if (firstClip.caption) {
+        setKaraokeText(firstClip.caption);
+      }
+    } else {
+      setClips([]);
+      setActiveClip(null);
+      setCurrentTime(0);
     }
+    setIsPlaying(false);
     setIsPipelineLocked(false);
     setIsStreaming(false);
     setPipelineProgress(100);
@@ -348,8 +390,12 @@ export default function VideoSlicerStudio({ onAddToast }) {
       return;
     }
     setActiveClip(clip);
+    setCurrentTime(clip.startSeconds || 0);
+    if (clip.caption) {
+      setKaraokeText(clip.caption);
+    }
     if (videoRef.current) {
-      videoRef.current.currentTime = clip.startSeconds;
+      videoRef.current.currentTime = clip.startSeconds || 0;
       videoRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
@@ -370,8 +416,10 @@ export default function VideoSlicerStudio({ onAddToast }) {
       setKaraokeText(transcripts.sentences[activeIdx].text);
     }
 
-    if (activeClip && curr >= activeClip.endSeconds) {
+    // 仅在自然播放到达当前选中切片末尾时循环回起点，避免手动点击进度条跳转时被强行拉回起点
+    if (activeClip && curr >= activeClip.endSeconds && curr <= activeClip.endSeconds + 1.5) {
       videoRef.current.currentTime = activeClip.startSeconds;
+      setCurrentTime(activeClip.startSeconds);
     }
   };
 
@@ -717,16 +765,22 @@ export default function VideoSlicerStudio({ onAddToast }) {
       </header>
 
       {/* 主体工作台区域：上下专业布局 + 水平自适应伸缩 */}
-      <main className="flex-1 flex flex-col overflow-hidden p-4 lg:p-5 gap-4 max-w-[1900px] w-full mx-auto select-none">
+      <main className="flex-1 flex flex-col overflow-hidden p-3.5 lg:p-4 gap-3.5 max-w-[1920px] w-full mx-auto select-none">
         {/* 上半部分：紧凑监看控制台 (左侧视窗 + 右侧时空热度时序中枢) */}
-        <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-4 shrink-0 flex flex-col lg:flex-row gap-5 items-stretch">
-          {/* 左侧：视频监视视窗 (放大至 560px~680px，正下方配备独立时间戳与播放控制条) */}
-          <div className="w-full lg:w-[540px] xl:w-[600px] 2xl:w-[660px] shrink-0 flex flex-col gap-2.5">
-            <div className="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group shadow-inner">
+        <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-3.5 shrink-0 flex flex-col lg:flex-row gap-5 items-stretch">
+          {/* 左侧：视频监视视窗 (宽屏大视窗 520px~620px，正下方配备独立时间戳与播放控制条) */}
+          <div className="w-full lg:w-[500px] xl:w-[560px] 2xl:w-[620px] shrink-0 flex flex-col gap-2">
+            <div className="relative w-full h-[250px] lg:h-[280px] xl:h-[310px] bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group shadow-inner">
               <video
                 ref={videoRef}
                 src={videoData.videoUrl}
                 onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={() => {
+                  if (videoRef.current && activeClip && activeClip.startSeconds > 0 && currentTime <= 1) {
+                    videoRef.current.currentTime = activeClip.startSeconds;
+                    setCurrentTime(activeClip.startSeconds);
+                  }
+                }}
                 muted={isMuted}
                 playsInline
                 className="w-full h-full object-contain"
@@ -763,53 +817,69 @@ export default function VideoSlicerStudio({ onAddToast }) {
             <div className="flex flex-col gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 text-white shadow-xs">
               {/* 多产品时空热度分段时序轨 (嵌入时间戳进度条中，纯净无亮块，上方以利落倒三角箭头指示当前位置) */}
               <div
-                className="relative pt-2 pb-0.5 w-full cursor-pointer group/timeline select-none"
+                className="relative pt-2.5 pb-0.5 w-full cursor-pointer group/timeline select-none"
                 onClick={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                  if (videoRef.current && videoData.duration) {
+                  if (videoData.duration) {
                     const target = pct * videoData.duration;
-                    videoRef.current.currentTime = target;
+                    const matched = clips.find(
+                      (c) => target >= c.startSeconds && target <= c.endSeconds
+                    );
+                    setActiveClip(matched || null);
                     setCurrentTime(target);
+                    if (videoRef.current) {
+                      videoRef.current.currentTime = target;
+                    }
                   }
                 }}
-                title="时空热度时序轨：点击跳转播放"
+                title="时空热度时序轨：点击任意位置自由跳转试看"
               >
                 {/* 倒三角箭头指示器 ▼ (直观指示当前播放/切片位置) */}
                 <div
                   className="absolute top-0 -ml-[5px] z-30 pointer-events-none transition-all duration-75 flex flex-col items-center"
                   style={{
-                    left: `${videoData.duration ? (currentTime / videoData.duration) * 100 : 0}%`
+                    left: `${videoData.duration ? Math.min(100, Math.max(0, (currentTime / videoData.duration) * 100)) : 0}%`
                   }}
                 >
                   <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-white drop-shadow-md" />
                 </div>
 
                 {/* 纯净多产品分段色带 (无任何亮块遮挡，纯净通透) */}
-                <div className="relative h-2.5 w-full bg-neutral-800 rounded-full overflow-hidden">
+                <div className="relative h-2.5 w-full bg-neutral-700/80 rounded-full overflow-hidden">
                   {products.length === 0 ? (
                     <div className="absolute inset-0 bg-neutral-700/60" />
                   ) : (
-                    products.map((p) => (
-                      <div
-                        key={p.index}
-                        className="absolute top-0 bottom-0 transition-opacity hover:brightness-125"
-                        style={{
-                          left: `${p.startPct}%`,
-                          width: `${p.widthPct}%`,
-                          backgroundColor: colorOf(p.index),
-                          opacity: productFilter < 0 || productFilter === p.index ? 0.9 : 0.3
-                        }}
-                        title={`单品：${p.name} (${p.sellingPoints || '热卖中'})`}
-                      />
-                    ))
+                    products.map((p) => {
+                      const exactStartPct =
+                        videoData.duration && p.startSeconds !== undefined
+                          ? (p.startSeconds / videoData.duration) * 100
+                          : p.startPct;
+                      const exactWidthPct =
+                        videoData.duration && p.startSeconds !== undefined && p.endSeconds !== undefined
+                          ? Math.max(0.5, ((p.endSeconds - p.startSeconds) / videoData.duration) * 100)
+                          : p.widthPct;
+                      return (
+                        <div
+                          key={p.index}
+                          className="absolute top-0 bottom-0 transition-opacity hover:brightness-125"
+                          style={{
+                            left: `${exactStartPct}%`,
+                            width: `${exactWidthPct}%`,
+                            backgroundColor: colorOf(p.index),
+                            opacity: productFilter < 0 || productFilter === p.index ? 0.95 : 0.25
+                          }}
+                          title={`单品：${p.name} (${p.sellingPoints || '热卖中'})`}
+                        />
+                      );
+                    })
                   )}
 
                   {/* 垂直白细游标贯穿色带内部 */}
                   <div
                     className="absolute top-0 bottom-0 bg-white w-[1.5px] -ml-[0.75px] z-20 pointer-events-none"
                     style={{
-                      left: `${videoData.duration ? (currentTime / videoData.duration) * 100 : 0}%`
+                      left: `${videoData.duration ? Math.min(100, Math.max(0, (currentTime / videoData.duration) * 100)) : 0}%`
                     }}
                   />
                 </div>
@@ -858,7 +928,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
                     </span>
                   ) : (
                     <span className="text-neutral-400 font-mono text-[10px]">
-                      {isStreaming ? '流水线解析中...' : '点击进度条或下方切片可直接试看'}
+                      {isStreaming ? '流水线解析中...' : '自由试看模式 · 点击下方卡片可锁定切片区间'}
                     </span>
                   )}
                 </div>
@@ -869,8 +939,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
           {/* 右侧：流水线中枢与单品筛选控制台 (精简纯净) */}
           <div className="flex-1 flex flex-col justify-between min-w-0 gap-3 py-1">
             {/* 顶栏：视频信息与阶段锁定状态 */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-[220px] flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono shrink-0">
                     {videoData.width}x{videoData.height}
@@ -911,7 +981,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
               </div>
             </div>
 
-            {/* 中部：商品筛选快速胶囊 (带色标与切片统计) */}
+            {/* 中部：商品筛选快速胶囊 (带色标与切片统计，点击自动定位时间轴箭头) */}
             <div className="p-3.5 rounded-xl bg-neutral-50/80 border border-neutral-200/70">
               <div className="flex items-center justify-between mb-2 text-xs">
                 <span className="font-semibold text-neutral-700 flex items-center gap-1.5">
@@ -919,13 +989,20 @@ export default function VideoSlicerStudio({ onAddToast }) {
                   带货单品快速筛选
                 </span>
                 <span className="text-neutral-400 text-[11px]">
-                  点击下方胶囊可单独过滤商品矩阵
+                  点击胶囊可过滤单品并同步定位时间轴指针
                 </span>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={() => setProductFilter(-1)}
+                  onClick={() => {
+                    setProductFilter(-1);
+                    if (clips.length > 0) {
+                      setActiveClip(clips[0]);
+                      setCurrentTime(clips[0].startSeconds || 0);
+                      if (videoRef.current) videoRef.current.currentTime = clips[0].startSeconds || 0;
+                    }
+                  }}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
                     productFilter === -1
                       ? 'bg-neutral-900 text-white shadow-2xs'
@@ -935,12 +1012,23 @@ export default function VideoSlicerStudio({ onAddToast }) {
                   全部单品 ({clips.length})
                 </button>
                 {products.map((p) => {
-                  const pCount = clips.filter((c) => c.productIndex === p.index).length;
+                  const prodClips = clips.filter((c) => c.productIndex === p.index);
+                  const pCount = prodClips.length;
                   const isSel = productFilter === p.index;
                   return (
                     <button
                       key={p.index}
-                      onClick={() => setProductFilter(isSel ? -1 : p.index)}
+                      onClick={() => {
+                        const nextFilter = isSel ? -1 : p.index;
+                        setProductFilter(nextFilter);
+                        if (nextFilter >= 0) {
+                          const targetClip = prodClips[0];
+                          const targetSec = targetClip ? targetClip.startSeconds : (p.startSeconds || 0);
+                          if (targetClip) setActiveClip(targetClip);
+                          setCurrentTime(targetSec);
+                          if (videoRef.current) videoRef.current.currentTime = targetSec;
+                        }
+                      }}
                       className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
                         isSel
                           ? 'bg-neutral-900 text-white shadow-2xs'
