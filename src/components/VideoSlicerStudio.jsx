@@ -613,7 +613,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
   };
 
   return (
-    <div className="relative flex-1 flex flex-col h-full bg-[#f8f9fb] text-neutral-800 antialiased overflow-hidden select-none">
+    <div className="relative flex-1 flex flex-col min-h-full bg-[#f8f9fb] text-neutral-800 antialiased select-none">
       {/* 顶部流光细进度条 */}
       <div className="h-0.5 w-full bg-neutral-100 overflow-hidden relative shrink-0">
         <div
@@ -765,7 +765,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
       </header>
 
       {/* 主体工作台区域：上下专业布局 + 水平自适应伸缩 */}
-      <main className="flex-1 flex flex-col overflow-hidden p-3.5 lg:p-4 gap-3.5 max-w-[1920px] w-full mx-auto select-none">
+      <main className="flex-1 flex flex-col p-3.5 lg:p-4 gap-3.5 max-w-[1920px] w-full mx-auto select-none">
         {/* 上半部分：紧凑监看控制台 (左侧视窗 + 右侧时空热度时序中枢) */}
         <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-3.5 shrink-0 flex flex-col lg:flex-row gap-5 items-stretch">
           {/* 左侧：视频监视视窗 (宽屏大视窗 520px~620px，正下方配备独立时间戳与播放控制条) */}
@@ -981,19 +981,19 @@ export default function VideoSlicerStudio({ onAddToast }) {
               </div>
             </div>
 
-            {/* 中部：商品筛选快速胶囊 (带色标与切片统计，点击自动定位时间轴箭头) */}
-            <div className="p-3.5 rounded-xl bg-neutral-50/80 border border-neutral-200/70">
-              <div className="flex items-center justify-between mb-2 text-xs">
+            {/* 中部：商品筛选快速胶囊 (带色标与切片统计，宽度紧凑自适应，点击自动定位时间轴箭头) */}
+            <div className="w-fit max-w-xl p-2.5 px-3.5 rounded-xl bg-neutral-50/90 border border-neutral-200/70">
+              <div className="flex items-center justify-between mb-2 text-xs gap-4">
                 <span className="font-semibold text-neutral-700 flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-neutral-500" />
                   带货单品快速筛选
                 </span>
                 <span className="text-neutral-400 text-[11px]">
-                  点击胶囊可过滤单品并同步定位时间轴指针
+                  点击过滤并定位指针
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   onClick={() => {
                     setProductFilter(-1);
@@ -1100,8 +1100,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
           </div>
         </section>
 
-        {/* 下半部分：切片资产看板与矩阵池 (自动水平伸缩多列网格) */}
-        <section className="flex-1 flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden min-h-0">
+        {/* 下半部分：切片资产看板与矩阵池 (无内部固定滚动条，随全页自然流式展示) */}
+        <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
           {/* 下半部分顶部导航与视图控制器 */}
           <div className="px-5 py-2.5 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/70 shrink-0">
             {/* 左侧：Tab 切换 (切片矩阵 vs ASR 逐字稿) */}
@@ -1174,9 +1174,9 @@ export default function VideoSlicerStudio({ onAddToast }) {
             )}
           </div>
 
-          {/* 切片矩阵滚动容器 (水平自适应多列 Grid) */}
+          {/* 切片矩阵容器 (水平自适应多列 Grid，随全页统一滚动) */}
           {activeTab === 'clips' && (
-            <div ref={cardsContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div ref={cardsContainerRef} className="p-4 space-y-4">
               {clips.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-12 text-neutral-400">
                   <div className="w-10 h-10 rounded-full border-2 border-neutral-200 border-t-blue-600 animate-spin mb-3" />
@@ -1451,7 +1451,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
 
           {/* Tab 2: ASR 口播逐字稿与时间戳 */}
           {activeTab === 'transcripts' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="p-4 space-y-3">
               <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/70 text-xs text-neutral-600 leading-relaxed">
                 <span className="font-semibold text-neutral-800 block mb-1">
                   DashScope Paraformer 识别全文：
