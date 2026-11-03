@@ -705,11 +705,11 @@ app.post('/api/slicer/cut-all', async (c) => {
   }
 });
 
-// (3.5) 一键导出到剪映草稿工程 (走 DSH 微内核 jianying 插件服务)
+// (3.5) 一键导出到剪映草稿工程 (走 DSH 微内核 jianying 插件服务并自动置顶唤起剪映)
 app.post('/api/slicer/export-jianying', async (c) => {
   try {
     const body = await c.req.json();
-    const { videoId, clips = [], sentences = [], draftName, width, height } = body;
+    const { videoId, clips = [], sentences = [], draftName, width, height, openApp = true } = body;
 
     const videosDir = path.resolve(__dirname, '../uploads/videos');
     let inputPath = path.join(videosDir, `${videoId}.mp4`);
@@ -737,15 +737,30 @@ app.post('/api/slicer/export-jianying', async (c) => {
       height: h,
       clips,
       sentences,
+      openApp,
     });
 
     return c.json({
       code: 0,
-      message: '成功导出到剪映草稿箱',
+      message: res.appLaunched ? '成功导出并已唤起剪映客户端' : '成功导出到剪映草稿箱',
       data: res,
     });
   } catch (err: any) {
     console.error('导出到剪映草稿失败:', err);
+    return c.json({ code: 500, error: err.message }, 500);
+  }
+});
+
+// (3.6) 主动唤起剪映客户端
+app.post('/api/slicer/open-jianying', async (c) => {
+  try {
+    const launched = await (cordisCtx as any).jianying.launchApp();
+    return c.json({
+      code: 0,
+      data: { launched },
+      message: launched ? '已唤起剪映客户端' : '未检测到剪映客户端或唤起失败',
+    });
+  } catch (err: any) {
     return c.json({ code: 500, error: err.message }, 500);
   }
 });

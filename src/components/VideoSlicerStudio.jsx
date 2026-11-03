@@ -486,14 +486,30 @@ export default function VideoSlicerStudio({ onAddToast }) {
           clips: targetClips,
           sentences: transcripts.sentences || [],
           width: videoData.width,
-          height: videoData.height
+          height: videoData.height,
+          openApp: true
         })
       });
       const json = await res.json();
       if (json.code === 0 && json.data) {
         loadTraces();
-        onAddToast &&
-          onAddToast(`已成功导出剪映工程【${json.data.draftName}】！打开剪映App草稿箱首位即可直接精剪。`);
+
+        // 尝试通过浏览器原生协议辅助唤起
+        try {
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = 'videocut://';
+          document.body.appendChild(iframe);
+          setTimeout(() => iframe.remove(), 1000);
+        } catch {
+          // ignore
+        }
+
+        const msg = json.data.appLaunched
+          ? `已成功导出工程【${json.data.draftName}】并为您唤起剪映！在剪映草稿箱双击首项即可编辑。`
+          : `已成功导出剪映工程【${json.data.draftName}】！打开剪映App草稿箱首位即可直接精剪。`;
+
+        onAddToast && onAddToast(msg);
       } else {
         throw new Error(json.error || '导出剪映失败');
       }
