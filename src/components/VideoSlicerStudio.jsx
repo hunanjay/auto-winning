@@ -716,415 +716,437 @@ export default function VideoSlicerStudio({ onAddToast }) {
         </div>
       </header>
 
-      {/* 主体工作台区域 */}
-      <main className="flex-1 flex overflow-hidden p-6 gap-6 max-w-[1720px] w-full mx-auto">
-        {/* 左侧：长视频预览与渐进式时空轨道 */}
-        <section className="flex-1 flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-6 overflow-hidden">
-          {/* 视频信息栏 */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono">
-                  {videoData.width}x{videoData.height}
-                </span>
-                <h2 className="text-sm font-semibold text-neutral-900 truncate max-w-xl">
-                  {videoData.fileName}
-                </h2>
-              </div>
-              <p className="text-xs text-neutral-400 mt-1">
-                视频总时长: {videoData.durationFormatted} · {products.length > 0 ? `包含 ${products.length} 个带货单品` : '正在解析带货单品...'}
-              </p>
-            </div>
+      {/* 主体工作台区域：上下专业布局 + 水平自适应伸缩 */}
+      <main className="flex-1 flex flex-col overflow-hidden p-4 lg:p-5 gap-4 max-w-[1900px] w-full mx-auto select-none">
+        {/* 上半部分：紧凑监看控制台 (左侧视窗 + 右侧时空热度时序中枢) */}
+        <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-4 shrink-0 flex flex-col lg:flex-row gap-5 items-stretch">
+          {/* 左侧：视频监视视窗 (约 440px 宽，比例自适应) */}
+          <div className="w-full lg:w-[440px] xl:w-[480px] shrink-0 flex flex-col justify-center">
+            <div className="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group shadow-inner">
+              <video
+                ref={videoRef}
+                src={videoData.videoUrl}
+                onTimeUpdate={handleTimeUpdate}
+                muted={isMuted}
+                playsInline
+                className="w-full h-full object-contain"
+                onClick={handleTogglePlay}
+              />
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/60 font-medium">
-                {pipelineStageBadge}
-              </span>
+              {/* 画面中心状态提示 (未播放时显示) */}
+              {!isPlaying && (
+                <div
+                  onClick={handleTogglePlay}
+                  className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs cursor-pointer"
+                >
+                  <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur mb-2 transition-transform active:scale-95">
+                    <Play className="w-5 h-5 text-white ml-0.5" />
+                  </div>
+                  <p className="text-xs font-medium text-neutral-200">
+                    {isStreaming ? '正在实时分析流水线...' : '点击播放当前高光切片'}
+                  </p>
+                </div>
+              )}
+
+              {/* 卡拉OK实时口播台词浮层 */}
+              {karaokeText && (
+                <div className="absolute bottom-12 left-4 right-4 flex justify-center pointer-events-none z-10">
+                  <div className="max-w-md px-3 py-1.5 rounded-lg bg-black/85 backdrop-blur text-white text-[11px] font-medium text-center shadow-lg border border-white/10 truncate">
+                    <span className="text-neutral-400 mr-1.5 font-mono">口播:</span>
+                    <span>{karaokeText}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 画面内播放控制器 */}
+              <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between px-3 py-1.5 rounded-lg bg-black/65 backdrop-blur border border-white/10 text-white opacity-85 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-2.5">
+                  <button onClick={handleTogglePlay} className="p-0.5 rounded hover:bg-white/20 transition-colors cursor-pointer">
+                    {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                  </button>
+                  <button onClick={() => setIsMuted(!isMuted)} className="p-0.5 rounded hover:bg-white/20 transition-colors cursor-pointer">
+                    {isMuted ? <VolumeX className="w-3.5 h-3.5 text-neutral-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
+                  </button>
+                  <span className="text-[11px] font-mono text-neutral-300">
+                    {Math.floor(currentTime / 60).toString().padStart(2, '0')}:
+                    {Math.floor(currentTime % 60).toString().padStart(2, '0')} / {videoData.durationFormatted}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {activeClip?.tag || (isStreaming ? '流水线解析中' : '切片试看就绪')}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* 视频播放视窗与卡拉OK实时字幕浮层 */}
-          <div className="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group">
-            <video
-              ref={videoRef}
-              src={videoData.videoUrl}
-              onTimeUpdate={handleTimeUpdate}
-              muted={isMuted}
-              playsInline
-              className="w-full h-full object-contain"
-              onClick={handleTogglePlay}
-            />
-
-            {/* 画面中心状态提示 (未播放时显示) */}
-            {!isPlaying && (
-              <div
-                onClick={handleTogglePlay}
-                className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs cursor-pointer"
-              >
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur mb-3 transition-transform active:scale-95">
-                  <Play className="w-6 h-6 text-white ml-0.5" />
+          {/* 右侧：多产品时空热度双轨与流水线控制中枢 */}
+          <div className="flex-1 flex flex-col justify-between min-w-0 gap-3 py-0.5">
+            {/* 顶栏：视频信息与阶段锁定状态 */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono shrink-0">
+                    {videoData.width}x{videoData.height}
+                  </span>
+                  <h2 className="text-sm font-semibold text-neutral-900 truncate" title={videoData.fileName}>
+                    {videoData.fileName}
+                  </h2>
                 </div>
-                <p className="text-sm font-medium text-neutral-200">
-                  {isStreaming ? '正在实时监听分析流水线...' : '点击播放当前切片'}
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  视频总时长: {videoData.durationFormatted} · {products.length > 0 ? `划分 ${products.length} 个带货单品 · 共 ${clips.length} 条高光切片` : '正在解析带货单品...'}
                 </p>
               </div>
-            )}
 
-            {/* 卡拉OK实时口播台词浮层 */}
-            {karaokeText && (
-              <div className="absolute bottom-14 left-6 right-6 flex justify-center pointer-events-none z-10">
-                <div className="max-w-xl px-4 py-2 rounded-xl bg-black/80 backdrop-blur text-white text-xs font-medium text-center shadow-lg border border-white/10">
-                  <span className="text-neutral-400 mr-2 font-mono">当前口播:</span>
-                  <span>{karaokeText}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/60 font-medium">
+                  {pipelineStageBadge}
+                </span>
+
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    isPipelineLocked
+                      ? 'bg-amber-50 border border-amber-200 text-amber-800'
+                      : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  }`}
+                >
+                  {isPipelineLocked ? (
+                    <>
+                      <Lock className="w-3 h-3 text-amber-600" />
+                      <span>流水线处理中 (防打断锁定)</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      <span>已就绪：自由试看与导出</span>
+                    </>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* 画面内播放控制器 */}
-            <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between px-4 py-2 rounded-xl bg-black/60 backdrop-blur border border-white/10 text-white opacity-80 group-hover:opacity-100 transition-opacity">
-              <div className="flex items-center gap-3">
-                <button onClick={handleTogglePlay} className="p-1 rounded hover:bg-white/20 transition-colors">
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                </button>
-                <button onClick={() => setIsMuted(!isMuted)} className="p-1 rounded hover:bg-white/20 transition-colors">
-                  {isMuted ? <VolumeX className="w-4 h-4 text-neutral-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-                </button>
-                <span className="text-xs font-mono text-neutral-300">
-                  {Math.floor(currentTime / 60).toString().padStart(2, '0')}:
-                  {Math.floor(currentTime % 60).toString().padStart(2, '0')} / {videoData.durationFormatted}
+            {/* 中部：渐进式多产品与切片时空时序热度双轨 */}
+            <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-200/70">
+              <div className="flex items-center justify-between mb-1.5 text-xs">
+                <span className="font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-neutral-500" />
+                  多产品时空热度分布时序轨
+                </span>
+                <span className="text-neutral-400 text-[11px]">
+                  {products.length > 0 ? `已挂载 ${products.length} 个单品区间 · ${clips.length} 段高光` : '等待识别商品'}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {activeClip?.tag || (isStreaming ? '流水线解析中' : '切片试看就绪')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* 渐进式多产品与切片时间轴轨 */}
-          <div className="mt-6 p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
-            <div className="flex items-center justify-between mb-2 text-xs">
-              <span className="font-medium text-neutral-700 flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5 text-neutral-500" />
-                多产品时空热度分布轨
-              </span>
-              <span className="text-neutral-400 text-[11px]">
-                {products.length > 0 ? `已划分 ${products.length} 个商品区间` : '等待识别商品'}
-              </span>
-            </div>
-
-            {/* 轨 1: 产品分段色带 (阶段 1 实时挂载) */}
-            <div className="relative h-6 bg-neutral-200/70 rounded-md overflow-hidden mb-2 border border-neutral-300/40">
-              {products.length === 0 ? (
-                <div className="absolute inset-0 flex items-center justify-center text-[11px] text-neutral-400 italic">
-                  等待第一阶段产品识别分段...
-                </div>
-              ) : (
-                <div className="absolute inset-0">
-                  {products.map((p) => (
-                    <button
-                      key={p.index}
-                      onClick={() => setProductFilter(productFilter === p.index ? -1 : p.index)}
-                      className="absolute top-0 bottom-0 text-[11px] text-white font-medium truncate px-2 flex items-center transition-all duration-300 hover:brightness-110"
-                      style={{
-                        left: `${p.startPct}%`,
-                        width: `${p.widthPct}%`,
-                        backgroundColor: colorOf(p.index),
-                        opacity: productFilter < 0 || productFilter === p.index ? 1 : 0.35
-                      }}
-                      title={`${p.name} (${p.sellingPoints})`}
-                    >
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 轨 2: 细分环节切片色块 (阶段 2 实时挂载) */}
-            <div className="relative h-8 bg-neutral-100 rounded-md overflow-hidden border border-neutral-200 flex items-center">
-              {clips.length === 0 ? (
-                <div className="w-full text-center text-[11px] text-neutral-400 italic">
-                  等待第二阶段逐产品切片规划...
-                </div>
-              ) : (
-                <div className="absolute inset-0">
-                  {visibleClips.map((clip) => {
-                    const isSelected = activeClip?.id === clip.id;
-                    return (
-                      <div
-                        key={clip.id}
-                        onClick={() => handleCardClick(clip)}
-                        className={`absolute top-1 bottom-1 rounded text-[10px] text-neutral-800 bg-white/90 border font-mono flex items-center justify-center overflow-hidden fade-in-up cursor-pointer transition-all ${
-                          isSelected ? 'border-neutral-900 bg-neutral-900 text-white font-bold' : 'border-neutral-300 hover:border-neutral-500'
-                        }`}
+              {/* 轨 1: 产品分段色带 */}
+              <div className="relative h-5 bg-neutral-200/70 rounded-md overflow-hidden mb-1.5 border border-neutral-300/40">
+                {products.length === 0 ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">
+                    等待第一阶段产品识别分段...
+                  </div>
+                ) : (
+                  <div className="absolute inset-0">
+                    {products.map((p) => (
+                      <button
+                        key={p.index}
+                        onClick={() => setProductFilter(productFilter === p.index ? -1 : p.index)}
+                        className="absolute top-0 bottom-0 text-[10px] text-white font-medium truncate px-2 flex items-center transition-all duration-300 hover:brightness-110 cursor-pointer"
                         style={{
-                          left: `${clip.startPct}%`,
-                          width: `${clip.widthPct}%`
+                          left: `${p.startPct}%`,
+                          width: `${p.widthPct}%`,
+                          backgroundColor: colorOf(p.index),
+                          opacity: productFilter < 0 || productFilter === p.index ? 1 : 0.35
                         }}
-                        title={`${clip.productName || ''} · ${clip.tag} (${clip.timeRange})`}
+                        title={`${p.name} (${p.sellingPoints})`}
                       >
-                        {clip.tag}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 轨 2: 细分环节切片色块 */}
+              <div className="relative h-6 bg-neutral-100 rounded-md overflow-hidden border border-neutral-200 flex items-center">
+                {clips.length === 0 ? (
+                  <div className="w-full text-center text-[10px] text-neutral-400 italic">
+                    等待第二阶段逐产品切片规划...
+                  </div>
+                ) : (
+                  <div className="absolute inset-0">
+                    {visibleClips.map((clip) => {
+                      const isSelected = activeClip?.id === clip.id;
+                      return (
+                        <div
+                          key={clip.id}
+                          onClick={() => handleCardClick(clip)}
+                          className={`absolute top-0.5 bottom-0.5 rounded text-[9px] text-neutral-800 bg-white/95 border font-mono flex items-center justify-center overflow-hidden fade-in-up cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-neutral-900 bg-neutral-900 text-white font-bold ring-1 ring-neutral-900'
+                              : 'border-neutral-300 hover:border-neutral-500'
+                          }`}
+                          style={{
+                            left: `${clip.startPct}%`,
+                            width: `${clip.widthPct}%`
+                          }}
+                          title={`${clip.productName || ''} · ${clip.tag} (${clip.timeRange})`}
+                        >
+                          {clip.tag}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* 商品筛选快速胶囊 */}
-            {products.length > 0 && (
-              <div className="mt-3 flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] text-neutral-400">商品筛选:</span>
+            {/* 底栏：单品筛选胶囊 + 批量导出工具条 */}
+            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+              {/* 单品快速过滤胶囊 */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-neutral-400 font-medium">筛选单品:</span>
                 <button
                   onClick={() => setProductFilter(-1)}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition ${
-                    productFilter === -1 ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                    productFilter === -1
+                      ? 'bg-neutral-900 text-white shadow-2xs'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                   }`}
                 >
                   全部 ({clips.length})
                 </button>
                 {products.map((p) => {
-                  const pClipsCount = clips.filter((c) => c.productIndex === p.index).length;
+                  const pCount = clips.filter((c) => c.productIndex === p.index).length;
                   const isSel = productFilter === p.index;
                   return (
                     <button
                       key={p.index}
                       onClick={() => setProductFilter(isSel ? -1 : p.index)}
-                      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium transition ${
-                        isSel ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                        isSel
+                          ? 'bg-neutral-900 text-white shadow-2xs'
+                          : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
                       }`}
                     >
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorOf(p.index) }} />
                       <span>{p.name}</span>
-                      <span className="text-[10px] opacity-70 font-mono">({pClipsCount})</span>
+                      <span className="text-[10px] opacity-70 font-mono">({pCount})</span>
                     </button>
                   );
                 })}
               </div>
-            )}
+
+              {/* 批量操作按钮组 */}
+              <div className="flex items-center gap-2">
+                <button
+                  id="btnBatchExportJianying"
+                  disabled={isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0}
+                  onClick={() => handleExportJianying(visibleClips)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition shadow-2xs cursor-pointer active:scale-95 ${
+                    isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0
+                      ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+                  }`}
+                  title="将当前筛选的所有切片打包为一个剪映多轨时间轴工程并唤起剪映"
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  <span>
+                    {exportingJianyingId === 'all'
+                      ? '写入剪映中...'
+                      : `一键导出剪映工程 (${visibleClips.length}段)`}
+                  </span>
+                </button>
+
+                <button
+                  id="btnBatchExport"
+                  disabled={isPipelineLocked || isCutting || visibleClips.length === 0}
+                  onClick={handleExportAll}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition shadow-2xs cursor-pointer active:scale-95 ${
+                    isPipelineLocked || isCutting || visibleClips.length === 0
+                      ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                      : 'bg-neutral-900 hover:bg-black text-white shadow-sm'
+                  }`}
+                  title="调用本地 FFmpeg 物理分割生成独立 MP4 短视频"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>
+                    {isPipelineLocked
+                      ? '处理中'
+                      : isCutting
+                      ? '正在裁剪...'
+                      : `批量下载 MP4 (${visibleClips.length})`}
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* 右侧：渐进式生成列表与安全冻结展示区 */}
-        <aside className="w-[500px] xl:w-[540px] 2xl:w-[580px] flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden shrink-0">
-          {/* 列表标题栏 */}
-          <div className="p-4 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/50">
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-700">实时产出切片卡片</h3>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-200/70 text-neutral-700 font-semibold">
-                {visibleClips.length} 条
-              </span>
+        {/* 下半部分：切片资产看板与矩阵池 (自动水平伸缩多列网格) */}
+        <section className="flex-1 flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden min-h-0">
+          {/* 下半部分顶部导航与视图控制器 */}
+          <div className="px-5 py-2.5 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/70 shrink-0">
+            {/* 左侧：Tab 切换 (切片矩阵 vs ASR 逐字稿) */}
+            <div className="flex items-center gap-4 text-xs font-medium">
+              <button
+                onClick={() => setActiveTab('clips')}
+                className={`flex items-center gap-1.5 py-1.5 border-b-2 transition-colors cursor-pointer ${
+                  activeTab === 'clips'
+                    ? 'border-neutral-900 text-neutral-900 font-bold'
+                    : 'border-transparent text-neutral-400 hover:text-neutral-700'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>切片矩阵池 ({visibleClips.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('transcripts')}
+                className={`flex items-center gap-1.5 py-1.5 border-b-2 transition-colors cursor-pointer ${
+                  activeTab === 'transcripts'
+                    ? 'border-neutral-900 text-neutral-900 font-bold'
+                    : 'border-transparent text-neutral-400 hover:text-neutral-700'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>ASR 逐字稿 ({transcripts.sentences?.length || 0} 句)</span>
+              </button>
             </div>
 
-            {/* 安全锁定状态标签 */}
-            <div
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
-                isPipelineLocked
-                  ? 'bg-amber-50 border border-amber-200 text-amber-800'
-                  : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
-              }`}
-            >
-              {isPipelineLocked ? (
-                <>
-                  <Lock className="w-3 h-3 text-amber-600" />
-                  <span>安全冻结：处理中禁止操作</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  <span>已解锁：自由试看与导出</span>
-                </>
-              )}
-            </div>
-          </div>
+            {/* 右侧：水平伸缩模式切换 & 一键折叠 */}
+            {activeTab === 'clips' && (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleAllCollapse}
+                  className="px-2.5 py-1 rounded text-xs text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70 transition font-medium cursor-pointer"
+                  title="展开或折叠全部商品分组"
+                >
+                  {groupedClips.some((g) => !collapsedProducts[g.productIndex]) ? '全部折叠' : '全部展开'}
+                </button>
 
-          {/* 选项卡切换: 切片列表 / ASR 逐字稿 */}
-          <div className="flex border-b border-neutral-200 bg-white px-4 text-xs font-medium">
-            <button
-              onClick={() => setActiveTab('clips')}
-              className={`flex items-center gap-1.5 py-2.5 border-b-2 mr-4 transition-colors ${
-                activeTab === 'clips' ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-400 hover:text-neutral-700'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>切片列表 ({visibleClips.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('transcripts')}
-              className={`flex items-center gap-1.5 py-2.5 border-b-2 transition-colors ${
-                activeTab === 'transcripts' ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-400 hover:text-neutral-700'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>ASR 逐字稿 ({transcripts.sentences?.length || 0})</span>
-            </button>
-          </div>
+                <div className="h-3.5 w-px bg-neutral-200" />
 
-          {/* 切片列表专区：增加商品筛选Pills + 视图切换 (紧凑行/卡片) + 手风琴折叠 */}
-          {activeTab === 'clips' && (
-            <>
-              {/* 顶部紧凑工具条 */}
-              <div className="px-3.5 py-2 border-b border-neutral-200/80 bg-neutral-50/80 flex items-center justify-between gap-2 text-xs shrink-0">
-                {/* 左侧：商品 Pills 快速过滤 */}
-                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 max-w-[320px]">
+                <div className="flex items-center bg-neutral-200/70 p-0.5 rounded-md">
                   <button
-                    onClick={() => setProductFilter(-1)}
-                    className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition shrink-0 cursor-pointer ${
-                      productFilter === -1
-                        ? 'bg-neutral-900 text-white'
-                        : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                    onClick={() => setViewMode('compact')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition cursor-pointer ${
+                      viewMode === 'compact'
+                        ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+                        : 'text-neutral-500 hover:text-neutral-900'
                     }`}
+                    title="紧凑胶囊网格 (高密度水平排列)"
                   >
-                    全部 ({clips.length})
+                    <List className="w-3.5 h-3.5" />
+                    <span>紧凑矩阵</span>
                   </button>
-                  {products.map((p) => {
-                    const count = clips.filter((c) => c.productIndex === p.index).length;
-                    const isSel = productFilter === p.index;
-                    return (
-                      <button
-                        key={p.index}
-                        onClick={() => setProductFilter(isSel ? -1 : p.index)}
-                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium transition shrink-0 cursor-pointer ${
-                          isSel
-                            ? 'bg-neutral-900 text-white shadow-2xs'
-                            : 'bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-100'
-                        }`}
-                        title={p.name}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorOf(p.index) }} />
-                        <span className="truncate max-w-[80px]">{p.name}</span>
-                        <span className="opacity-70 font-mono text-[10px]">({count})</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* 右侧：紧凑/卡片模式切换 & 一键折叠 */}
-                <div className="flex items-center gap-1 shrink-0">
                   <button
-                    onClick={toggleAllCollapse}
-                    className="px-2 py-1 rounded text-[11px] text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/70 transition font-medium cursor-pointer"
-                    title="展开或折叠全部商品分组"
+                    onClick={() => setViewMode('detail')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition cursor-pointer ${
+                      viewMode === 'detail'
+                        ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+                        : 'text-neutral-500 hover:text-neutral-900'
+                    }`}
+                    title="详细卡片网格 (包含金句与台词摘录)"
                   >
-                    {groupedClips.some((g) => !collapsedProducts[g.productIndex]) ? '全部折叠' : '全部展开'}
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>详细卡片</span>
                   </button>
-
-                  <div className="h-3 w-px bg-neutral-200 mx-0.5" />
-
-                  <div className="flex items-center bg-neutral-200/70 p-0.5 rounded-md">
-                    <button
-                      onClick={() => setViewMode('compact')}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        viewMode === 'compact'
-                          ? 'bg-white text-neutral-900 shadow-2xs font-bold'
-                          : 'text-neutral-500 hover:text-neutral-900'
-                      }`}
-                      title="紧凑行视图 (一屏览尽)"
-                    >
-                      <List className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('detail')}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        viewMode === 'detail'
-                          ? 'bg-white text-neutral-900 shadow-2xs font-bold'
-                          : 'text-neutral-500 hover:text-neutral-900'
-                      }`}
-                      title="详细卡片视图"
-                    >
-                      <LayoutGrid className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* 实时流式切片容器 (按商品手风琴聚合) */}
-              <div ref={cardsContainerRef} className="flex-1 overflow-y-auto p-3.5 space-y-3 relative">
-                {clips.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400">
-                    <div className="w-10 h-10 rounded-full border-2 border-neutral-200 border-t-blue-600 animate-spin mb-3" />
-                    <p className="text-xs font-medium text-neutral-600">正在与后台 AI 流水线建立连接</p>
-                    <p className="text-[11px] text-neutral-400 mt-1">处理完毕的片段将实时在此处逐步浮现</p>
-                  </div>
-                ) : (
-                  groupedClips.map((group) => {
-                    const isCollapsed = !!collapsedProducts[group.productIndex];
-                    const groupDuration = group.clips.reduce((acc, c) => acc + (c.durationSeconds || 0), 0);
+          {/* 切片矩阵滚动容器 (水平自适应多列 Grid) */}
+          {activeTab === 'clips' && (
+            <div ref={cardsContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+              {clips.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-12 text-neutral-400">
+                  <div className="w-10 h-10 rounded-full border-2 border-neutral-200 border-t-blue-600 animate-spin mb-3" />
+                  <p className="text-sm font-medium text-neutral-600">正在与后台 AI 流水线建立连接</p>
+                  <p className="text-xs text-neutral-400 mt-1">识别完毕的切片将在此处自动水平排列展开</p>
+                </div>
+              ) : (
+                groupedClips.map((group) => {
+                  const isCollapsed = !!collapsedProducts[group.productIndex];
+                  const groupDuration = group.clips.reduce((acc, c) => acc + (c.durationSeconds || 0), 0);
 
-                    return (
+                  return (
+                    <div
+                      key={group.productIndex}
+                      className="border border-neutral-200/90 rounded-xl overflow-hidden bg-white shadow-2xs transition-all"
+                    >
+                      {/* 商品分组手风琴头部卡条 */}
                       <div
-                        key={group.productIndex}
-                        className="border border-neutral-200/90 rounded-xl overflow-hidden bg-white shadow-2xs transition-all"
+                        onClick={() => toggleProductCollapse(group.productIndex)}
+                        className="px-4 py-2.5 bg-neutral-50/90 hover:bg-neutral-100/80 border-b border-neutral-100 flex items-center justify-between cursor-pointer transition select-none"
                       >
-                        {/* 商品分组手风琴头部卡条 */}
-                        <div
-                          onClick={() => toggleProductCollapse(group.productIndex)}
-                          className="px-3.5 py-2.5 bg-neutral-50/90 hover:bg-neutral-100/80 border-b border-neutral-100 flex items-center justify-between cursor-pointer transition select-none"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-neutral-400 transition-transform duration-200">
-                              {isCollapsed ? (
-                                <ChevronRight className="w-4 h-4" />
-                              ) : (
-                                <ChevronDown className="w-4 h-4" />
-                              )}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-neutral-400 transition-transform duration-200">
+                            {isCollapsed ? (
+                              <ChevronRight className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </span>
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ background: colorOf(group.productIndex) }}
+                          />
+                          <span className="text-xs font-bold text-neutral-900 truncate">
+                            {group.productName}
+                          </span>
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-200/70 text-neutral-600 font-medium">
+                            {group.clips.length} 条高光 · {groupDuration}s
+                          </span>
+                          {group.sellingPoints && (
+                            <span className="text-xs text-neutral-400 font-normal hidden sm:inline truncate max-w-md">
+                              ({group.sellingPoints})
                             </span>
-                            <span
-                              className="w-2.5 h-2.5 rounded-full shrink-0"
-                              style={{ background: colorOf(group.productIndex) }}
-                            />
-                            <span className="text-xs font-bold text-neutral-900 truncate">
-                              {group.productName}
-                            </span>
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-200/70 text-neutral-600 font-medium">
-                              {group.clips.length}条 · {groupDuration}s
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              disabled={isPipelineLocked || exportingJianyingId === `prod_${group.productIndex}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleExportJianying(
-                                  group.clips,
-                                  `剪映单品_${group.productName}_${group.clips.length}段高光`
-                                );
-                              }}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded bg-white hover:bg-blue-50 text-blue-700 hover:text-blue-800 border border-blue-200 text-[11px] font-medium transition active:scale-95 shadow-2xs cursor-pointer"
-                              title="仅将该单品切片打包导出剪映工程"
-                            >
-                              <Film className="w-3 h-3 text-blue-600" />
-                              <span>导本品工程</span>
-                            </button>
-                          </div>
+                          )}
                         </div>
 
-                        {/* 展开内容列表 */}
-                        {!isCollapsed && (
-                          <div className="p-2 space-y-2 bg-neutral-50/20">
-                            {group.clips.map((clip) => {
-                              const isSelected = activeClip?.id === clip.id;
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            disabled={isPipelineLocked || exportingJianyingId === `prod_${group.productIndex}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExportJianying(
+                                group.clips,
+                                `剪映单品_${group.productName}_${group.clips.length}段高光`
+                              );
+                            }}
+                            className="flex items-center gap-1 px-3 py-1 rounded bg-white hover:bg-blue-50 text-blue-700 hover:text-blue-800 border border-blue-200 text-xs font-medium transition active:scale-95 shadow-2xs cursor-pointer"
+                            title="仅将该单品切片打包导出剪映工程"
+                          >
+                            <Film className="w-3 h-3 text-blue-600" />
+                            <span>导本品剪映工程</span>
+                          </button>
+                        </div>
+                      </div>
 
-                              if (viewMode === 'compact') {
-                                /* 紧凑行模式 (Compact Row) */
+                      {/* 展开内容列表：水平伸缩网格 (根据 viewMode 自适应 1~5 列) */}
+                      {!isCollapsed && (
+                        <div className="p-3 bg-neutral-50/30">
+                          {viewMode === 'compact' ? (
+                            /* 紧凑矩阵模式：高密度横向伸缩网格 (3~6 列自适应) */
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5">
+                              {group.clips.map((clip) => {
+                                const isSelected = activeClip?.id === clip.id;
                                 return (
                                   <div
                                     key={clip.id}
                                     onClick={() => handleCardClick(clip)}
-                                    className={`group flex items-center justify-between px-3 py-2 rounded-lg border transition-all cursor-pointer select-none ${
+                                    className={`group flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer select-none ${
                                       isPipelineLocked
                                         ? 'opacity-70 border-blue-200 bg-white'
                                         : isSelected
                                         ? 'border-neutral-900 bg-neutral-900 text-white shadow-xs'
-                                        : 'border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50'
+                                        : 'border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50/90'
                                     }`}
                                   >
-                                    {/* 左侧：标签、金句、时长 */}
-                                    <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                                    {/* 标签与时间 */}
+                                    <div className="flex items-center justify-between gap-1 mb-1">
                                       <span
                                         className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
                                           isSelected
@@ -1134,14 +1156,6 @@ export default function VideoSlicerStudio({ onAddToast }) {
                                       >
                                         {clip.tag}
                                       </span>
-                                      <p
-                                        className={`text-xs truncate font-medium flex-1 ${
-                                          isSelected ? 'text-white' : 'text-neutral-800'
-                                        }`}
-                                        title={clip.caption}
-                                      >
-                                        {clip.caption}
-                                      </p>
                                       <span
                                         className={`text-[11px] font-mono shrink-0 ${
                                           isSelected ? 'text-white/70' : 'text-neutral-400'
@@ -1151,260 +1165,233 @@ export default function VideoSlicerStudio({ onAddToast }) {
                                       </span>
                                     </div>
 
-                                    {/* 右侧操作按钮 */}
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <button
-                                        disabled={isPipelineLocked || exportingJianyingId === clip.id}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleExportJianying([clip]);
-                                        }}
-                                        className={`p-1 rounded text-xs transition cursor-pointer ${
-                                          isSelected
-                                            ? 'hover:bg-white/20 text-blue-200'
-                                            : 'text-neutral-400 hover:text-blue-600 hover:bg-blue-50'
-                                        }`}
-                                        title="单条导入剪映"
-                                      >
-                                        <Film className="w-3.5 h-3.5" />
-                                      </button>
+                                    {/* Hook 金句 */}
+                                    <p
+                                      className={`text-xs font-semibold line-clamp-1 mb-2 ${
+                                        isSelected ? 'text-white' : 'text-neutral-800'
+                                      }`}
+                                      title={clip.caption}
+                                    >
+                                      {clip.caption}
+                                    </p>
 
-                                      <button
-                                        disabled={isPipelineLocked || isCutting}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleExportSingle(clip);
-                                        }}
-                                        className={`p-1 rounded text-xs transition cursor-pointer ${
-                                          isSelected
-                                            ? 'hover:bg-white/20 text-white'
-                                            : 'text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100'
+                                    {/* 底部操作行 */}
+                                    <div
+                                      className={`flex items-center justify-between pt-1.5 border-t text-[11px] ${
+                                        isSelected ? 'border-white/10' : 'border-neutral-100'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`font-mono ${
+                                          isSelected ? 'text-emerald-300' : 'text-emerald-600 font-medium'
                                         }`}
-                                        title="下载 MP4 切片"
                                       >
-                                        <Download className="w-3.5 h-3.5" />
-                                      </button>
+                                        分值 {clip.score}
+                                      </span>
+
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          disabled={isPipelineLocked || exportingJianyingId === clip.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExportJianying([clip]);
+                                          }}
+                                          className={`p-1 rounded text-xs transition cursor-pointer ${
+                                            isSelected
+                                              ? 'hover:bg-white/20 text-blue-200'
+                                              : 'text-neutral-400 hover:text-blue-600 hover:bg-blue-50'
+                                          }`}
+                                          title="导入单条到剪映"
+                                        >
+                                          <Film className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        <button
+                                          disabled={isPipelineLocked || isCutting}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExportSingle(clip);
+                                          }}
+                                          className={`p-1 rounded text-xs transition cursor-pointer ${
+                                            isSelected
+                                              ? 'hover:bg-white/20 text-white'
+                                              : 'text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100'
+                                          }`}
+                                          title="下载 MP4 切片"
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
                                 );
-                              }
-
-                              /* 详细卡片模式 (Detail Card) */
-                              return (
-                                <div
-                                  key={clip.id}
-                                  onClick={() => handleCardClick(clip)}
-                                  className={`clip-card fade-in-up p-3.5 rounded-xl border bg-white shadow-2xs relative overflow-hidden transition-all duration-300 cursor-pointer ${
-                                    isPipelineLocked
-                                      ? 'pulse-card border-blue-300'
-                                      : isSelected
-                                      ? 'border-neutral-900 ring-1 ring-neutral-900 bg-neutral-50/50'
-                                      : 'border-neutral-200 hover:border-neutral-400'
-                                  }`}
-                                >
-                                  {/* 冻结只读遮罩指示 */}
-                                  {isPipelineLocked && (
-                                    <div className="card-lock-badge absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-[10px] text-blue-700 font-medium">
-                                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                      <span>规划中 (只读)</span>
-                                    </div>
-                                  )}
-
-                                  <div className="flex items-center gap-2 mb-1.5">
-                                    <span
-                                      className="w-2 h-2 rounded-full"
-                                      style={{ background: colorOf(clip.productIndex) }}
-                                    />
-                                    <span className="text-xs font-semibold text-neutral-900">
-                                      {clip.productName || '单品'}
-                                    </span>
-                                    <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 font-medium text-neutral-700">
-                                      {clip.tag}
-                                    </span>
-                                    <span className="text-xs font-mono text-emerald-600 font-semibold ml-auto">
-                                      分值 {clip.score}
-                                    </span>
-                                  </div>
-
-                                  {/* 钩子金句气泡 */}
-                                  <div className="p-2 rounded-lg bg-neutral-50 border border-neutral-200/60 text-xs font-medium text-neutral-800 mb-2">
-                                    {clip.caption}
-                                  </div>
-
-                                  {/* 台词摘录 */}
-                                  {clip.transcriptSnippet && (
-                                    <p className="text-[11px] text-neutral-500 line-clamp-1 mb-2.5 leading-relaxed">
-                                      台词：{clip.transcriptSnippet}
-                                    </p>
-                                  )}
-
-                                  <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[11px] text-neutral-400">
-                                    <span className="font-mono">
-                                      {clip.timeRange} ({clip.durationSeconds}s)
-                                    </span>
-
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        disabled={isPipelineLocked || exportingJianyingId === clip.id}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleExportJianying([clip]);
-                                        }}
-                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
-                                          isPipelineLocked || exportingJianyingId === clip.id
-                                            ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-                                            : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 active:scale-95'
-                                        }`}
-                                        title="一键将该片段与字幕打包存入剪映草稿箱"
-                                      >
-                                        <Film className="w-3 h-3 text-blue-600" />
-                                        <span>
-                                          {exportingJianyingId === clip.id ? '写入中...' : '导入剪映'}
+                              })}
+                            </div>
+                          ) : (
+                            /* 详细大卡片模式：水平多列伸缩卡片网格 (2~5 列自适应) */
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5">
+                              {group.clips.map((clip) => {
+                                const isSelected = activeClip?.id === clip.id;
+                                return (
+                                  <div
+                                    key={clip.id}
+                                    onClick={() => handleCardClick(clip)}
+                                    className={`clip-card fade-in-up p-3.5 rounded-xl border bg-white shadow-2xs relative flex flex-col justify-between transition-all duration-300 cursor-pointer ${
+                                      isPipelineLocked
+                                        ? 'pulse-card border-blue-300'
+                                        : isSelected
+                                        ? 'border-neutral-900 ring-1 ring-neutral-900 bg-neutral-50/50'
+                                        : 'border-neutral-200 hover:border-neutral-400'
+                                    }`}
+                                  >
+                                    <div>
+                                      {/* 卡片头部 */}
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <span
+                                          className="w-2 h-2 rounded-full shrink-0"
+                                          style={{ background: colorOf(clip.productIndex) }}
+                                        />
+                                        <span className="text-xs font-semibold text-neutral-900 truncate">
+                                          {clip.productName || '单品'}
                                         </span>
-                                      </button>
-
-                                      <button
-                                        disabled={isPipelineLocked || isCutting}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleExportSingle(clip);
-                                        }}
-                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
-                                          isPipelineLocked || isCutting
-                                            ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-                                            : 'bg-neutral-900 hover:bg-black text-white active:scale-95'
-                                        }`}
-                                      >
-                                        <Download className="w-3 h-3" />
-                                        <span>
-                                          {isPipelineLocked ? '处理中...' : isCutting ? '裁剪中...' : '导出 MP4'}
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 font-medium text-neutral-700 shrink-0">
+                                          {clip.tag}
                                         </span>
-                                      </button>
+                                        <span className="text-xs font-mono text-emerald-600 font-semibold ml-auto shrink-0">
+                                          分值 {clip.score}
+                                        </span>
+                                      </div>
+
+                                      {/* 钩子金句气泡 */}
+                                      <div className="p-2 rounded-lg bg-neutral-50 border border-neutral-200/60 text-xs font-medium text-neutral-800 mb-2 line-clamp-2">
+                                        {clip.caption}
+                                      </div>
+
+                                      {/* 台词摘录 */}
+                                      {clip.transcriptSnippet && (
+                                        <p className="text-[11px] text-neutral-500 line-clamp-2 mb-3 leading-relaxed">
+                                          台词：{clip.transcriptSnippet}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* 卡片底部操作栏 */}
+                                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[11px] text-neutral-400 mt-auto">
+                                      <span className="font-mono">
+                                        {clip.timeRange} ({clip.durationSeconds}s)
+                                      </span>
+
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          disabled={isPipelineLocked || exportingJianyingId === clip.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExportJianying([clip]);
+                                          }}
+                                          className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                                            isPipelineLocked || exportingJianyingId === clip.id
+                                              ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                                              : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 active:scale-95'
+                                          }`}
+                                          title="一键将该片段与字幕打包存入剪映草稿箱"
+                                        >
+                                          <Film className="w-3 h-3 text-blue-600" />
+                                          <span>
+                                            {exportingJianyingId === clip.id ? '写入中' : '导入剪映'}
+                                          </span>
+                                        </button>
+
+                                        <button
+                                          disabled={isPipelineLocked || isCutting}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleExportSingle(clip);
+                                          }}
+                                          className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                                            isPipelineLocked || isCutting
+                                              ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                                              : 'bg-neutral-900 hover:bg-black text-white active:scale-95'
+                                          }`}
+                                        >
+                                          <Download className="w-3 h-3" />
+                                          <span>导出</span>
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           )}
 
           {/* Tab 2: ASR 口播逐字稿与时间戳 */}
           {activeTab === 'transcripts' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200/70 text-xs text-neutral-600 mb-3 leading-relaxed">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/70 text-xs text-neutral-600 leading-relaxed">
                 <span className="font-semibold text-neutral-800 block mb-1">
                   DashScope Paraformer 识别全文：
                 </span>
                 {transcripts.fullText || '暂无识别全文'}
               </div>
 
-              <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-2">
-                句级时间戳明细 (点击快速定位跳转)
+              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+                句级时间戳明细 (点击任一句跳转试看)
               </div>
 
-              {transcripts.sentences?.map((sentence, idx) => {
-                const isActive = activeSentenceIndex === idx;
-                const beginSec = (sentence.begin_time / 1000).toFixed(1);
-                const endSec = (sentence.end_time / 1000).toFixed(1);
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                {transcripts.sentences?.map((sentence, idx) => {
+                  const isActive = activeSentenceIndex === idx;
+                  const beginSec = (sentence.begin_time / 1000).toFixed(1);
+                  const endSec = (sentence.end_time / 1000).toFixed(1);
 
-                return (
-                  <div
-                    key={sentence.sentence_id || idx}
-                    onClick={() => {
-                      if (videoRef.current) {
-                        videoRef.current.currentTime = sentence.begin_time / 1000;
-                        videoRef.current.play().catch(() => {});
-                        setIsPlaying(true);
-                      }
-                    }}
-                    className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                      isActive
-                        ? 'border-neutral-900 bg-neutral-900 text-white shadow-xs'
-                        : 'border-neutral-200 hover:border-neutral-300 bg-white text-neutral-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className={`text-[11px] font-mono font-medium ${
-                          isActive ? 'text-neutral-300' : 'text-neutral-400'
-                        }`}
-                      >
-                        {beginSec}s - {endSec}s
-                      </span>
-                      {isActive && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-medium">
-                          正在播放
+                  return (
+                    <div
+                      key={sentence.sentence_id || idx}
+                      onClick={() => {
+                        if (videoRef.current) {
+                          videoRef.current.currentTime = sentence.begin_time / 1000;
+                          videoRef.current.play().catch(() => {});
+                          setIsPlaying(true);
+                        }
+                      }}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                        isActive
+                          ? 'border-neutral-900 bg-neutral-900 text-white shadow-xs'
+                          : 'border-neutral-200 hover:border-neutral-300 bg-white text-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`text-[11px] font-mono font-medium ${
+                            isActive ? 'text-neutral-300' : 'text-neutral-400'
+                          }`}
+                        >
+                          {beginSec}s - {endSec}s
                         </span>
-                      )}
+                        {isActive && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-medium">
+                            正在播放
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-xs leading-relaxed ${isActive ? 'text-white' : 'text-neutral-800'}`}>
+                        {sentence.text}
+                      </p>
                     </div>
-                    <p className={`text-xs leading-relaxed ${isActive ? 'text-white' : 'text-neutral-800'}`}>
-                      {sentence.text}
-                    </p>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
-
-          {/* 底部批量导出栏 */}
-          <div className="p-4 border-t border-neutral-200 bg-neutral-50/70 flex items-center justify-between">
-            <div className="text-xs text-neutral-500">
-              <span>
-                {isPipelineLocked
-                  ? '等待所有产品切片生成完成...'
-                  : `全部 ${products.length} 个商品切片已准备完毕`}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                id="btnBatchExportJianying"
-                disabled={isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0}
-                onClick={() => handleExportJianying(visibleClips)}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition shadow-2xs ${
-                  isPipelineLocked || exportingJianyingId === 'all' || visibleClips.length === 0
-                    ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-95 shadow-sm'
-                }`}
-                title="将当前全部高光切片打包为一个剪映多轨时间轴工程"
-              >
-                <Film className="w-3.5 h-3.5" />
-                <span>
-                  {exportingJianyingId === 'all'
-                    ? '写入剪映中...'
-                    : `导出剪映工程 (${visibleClips.length}段)`}
-                </span>
-              </button>
-
-              <button
-                id="btnBatchExport"
-                disabled={isPipelineLocked || isCutting || visibleClips.length === 0}
-                onClick={handleExportAll}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition shadow-2xs ${
-                  isPipelineLocked || isCutting || visibleClips.length === 0
-                    ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-                    : 'bg-neutral-900 hover:bg-black text-white cursor-pointer active:scale-95 shadow-sm'
-                }`}
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>
-                  {isPipelineLocked
-                    ? '流水线锁定中'
-                    : isCutting
-                    ? '正在裁剪...'
-                    : `批量下载 MP4`}
-                </span>
-              </button>
-            </div>
-          </div>
-        </aside>
+        </section>
       </main>
 
       {/* DSH 全局调用 Trace 追踪抽屉 */}
