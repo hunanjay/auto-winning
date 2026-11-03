@@ -7,28 +7,30 @@ import {
   Download,
   Flame,
   CheckCircle2,
-  Sparkles,
+  Lock,
   ExternalLink,
   Volume2,
   VolumeX,
   Clock,
-  Layers,
-  FileText,
   Activity,
-  Mic,
-  Cpu,
   Loader2,
-  Check,
   FolderOpen,
   Trash2,
   Terminal,
   X,
   ChevronRight,
   ChevronDown,
-  Copy
+  Copy,
+  RotateCcw,
+  FileText,
+  Layers
 } from 'lucide-react';
 
+const PALETTE = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#65a30d'];
+const colorOf = (i) => PALETTE[(i ?? 0) % PALETTE.length];
+
 export default function VideoSlicerStudio({ onAddToast }) {
+  // 基础数据态
   const [videoData, setVideoData] = useState({
     id: 'sample_livestream',
     fileName: '20261102_淘宝双11大促带货直播回放.mp4',
@@ -40,81 +42,38 @@ export default function VideoSlicerStudio({ onAddToast }) {
   });
 
   const [transcripts, setTranscripts] = useState({
-    fullText: '欢迎来到团团直播间，今天大家有福了，给家人们带来的是我们的镇店爆款第一种福利。平时一瓶要299，今天直播间直接破价只要99，并且买正装，多送一份正装体验装拆开用，不满意包退。大家仔细看镜头前的微距特写，这个细腻的质感和边缘处理真的是顶奢品质。很多姐妹经常熬夜加班，脸色暗沉，用它一抹提亮，三分钟就能清爽出门。现在直播间还有最后10秒钟大促倒计时，前100名加购下单的宝子，我们再加赠一份精美伴手礼盒，手慢无。32一直接上链接，赶紧加购。',
-    sentences: [
-      { sentence_id: 1, begin_time: 0, end_time: 8926, text: '欢迎来到团团直播间，今天大家有福了，给家人们带来的是我们的镇店爆款第一种福利。' },
-      { sentence_id: 2, begin_time: 8926, end_time: 20333, text: '平时一瓶要299，今天直播间直接破价只要99，并且买正装，多送一份正装体验装拆开用，不满意包退。' },
-      { sentence_id: 3, begin_time: 20333, end_time: 28268, text: '大家仔细看镜头前的微距特写，这个细腻的质感和边缘处理真的是顶奢品质。' },
-      { sentence_id: 4, begin_time: 28268, end_time: 35720, text: '很多姐妹经常熬夜加班，脸色暗沉，用它一抹提亮，三分钟就能清爽出门。' },
-      { sentence_id: 5, begin_time: 35720, end_time: 47395, text: '现在直播间还有最后10秒钟大促倒计时，前100名加购下单的宝子，我们再加赠一份精美伴手礼盒，手慢无。' },
-      { sentence_id: 6, begin_time: 47395, end_time: 50580, text: '32一直接上链接，赶紧加购。' }
-    ]
+    fullText: '欢迎来到团团直播间，今天大家有福了，给家人们带来的是我们的镇店爆款第一种福利...',
+    sentences: []
   });
 
-  const [clips, setClips] = useState([
-    {
-      id: 'asr-clip-1',
-      title: '黄金破价锚点片段',
-      startSeconds: 8,
-      endSeconds: 21,
-      durationSeconds: 13,
-      timeRange: '00:08 - 00:21',
-      score: 98,
-      startPct: 16,
-      widthPct: 25,
-      tag: '价格锚点峰值',
-      caption: '“平时299一瓶，今天破价只要99！”',
-      transcriptSnippet: '平时一瓶要299，今天直播间直接破价只要99，并且买正装，多送一份正装体验装拆开用，不满意包退。'
-    },
-    {
-      id: 'asr-clip-2',
-      title: '微距质感与痛点反杀片段',
-      startSeconds: 20,
-      endSeconds: 36,
-      durationSeconds: 16,
-      timeRange: '00:20 - 00:36',
-      score: 95,
-      startPct: 39,
-      widthPct: 31,
-      tag: '特写高光帧',
-      caption: '“熬夜暗沉脸？看这微距质感，一抹就提亮！”',
-      transcriptSnippet: '大家仔细看镜头前的微距特写，这个细腻的质感和边缘处理真的是顶奢品质。很多姐妹经常熬夜加班，脸色暗沉，用它一抹提亮，三分钟就能清爽出门。'
-    },
-    {
-      id: 'asr-clip-3',
-      title: '限时逼单加购波峰片段',
-      startSeconds: 35,
-      endSeconds: 48,
-      durationSeconds: 13,
-      timeRange: '00:35 - 00:48',
-      score: 97,
-      startPct: 69,
-      widthPct: 25,
-      tag: '加购波峰',
-      caption: '“最后10秒！前100名加购再送精美礼盒！”',
-      transcriptSnippet: '现在直播间还有最后10秒钟大促倒计时，前100名加购下单的宝子，我们再加赠一份精美伴手礼盒，手慢无。'
-    }
-  ]);
+  const [products, setProducts] = useState([]);
+  const [clips, setClips] = useState([]);
+  const [productFilter, setProductFilter] = useState(-1);
+  const [activeClip, setActiveClip] = useState(null);
+  const [activeTab, setActiveTab] = useState('clips'); // 'clips' | 'transcripts'
 
+  // 流水线流式加载与安全锁定状态
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isPipelineLocked, setIsPipelineLocked] = useState(false);
+  const [pipelineProgress, setPipelineProgress] = useState(100);
+  const [pipelineStatusText, setPipelineStatusText] = useState('已就绪：自由试看与导出');
+  const [pipelineStageBadge, setPipelineStageBadge] = useState('已完成全链路分析');
+  const [elapsed, setElapsed] = useState(0);
+  const [karaokeText, setKaraokeText] = useState('');
+
+  // 播放器与切片导出控制
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [activeSentenceIndex, setActiveSentenceIndex] = useState(-1);
+  const [isCutting, setIsCutting] = useState(false);
+
+  // 抽屉与外部状态
   const [cases, setCases] = useState([]);
   const [casesOpen, setCasesOpen] = useState(false);
   const [traces, setTraces] = useState([]);
   const [tracesOpen, setTracesOpen] = useState(false);
   const [expandedTraceId, setExpandedTraceId] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [productFilter, setProductFilter] = useState(-1); // -1 = 全部产品
-  const [activeClip, setActiveClip] = useState(clips[0]);
-  const [activeTab, setActiveTab] = useState('clips'); // 'clips' | 'transcripts'
-  const [activeRules, setActiveRules] = useState(['语音破价锚点', '微距特写帧', '加购波峰']);
-  const [isUploading, setIsUploading] = useState(false);
-  const [progressStep, setProgressStep] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
-  const ANALYZE_STEPS = ['探测视频信息', '提取音频', '上传音频', '语音转文字', '识别产品并规划切片'];
-  const [isCutting, setIsCutting] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [activeSentenceIndex, setActiveSentenceIndex] = useState(-1);
   const [serverStatus, setServerStatus] = useState({
     status: 'connected',
     serverUrl: 'http://127.0.0.1:8085',
@@ -122,25 +81,19 @@ export default function VideoSlicerStudio({ onAddToast }) {
   });
 
   const fileInputRef = useRef(null);
-  const progressTimerRef = useRef(null);
   const videoRef = useRef(null);
+  const cardsContainerRef = useRef(null);
+  const timerIntervalRef = useRef(null);
+  const eventSourceRef = useRef(null);
 
-  // 1. 初始化时向后端拉取真实 ASR + Qwen 高光分析数据
+  // 初始化加载
   useEffect(() => {
+    // 首次拉取已有切片案例
     fetch('http://localhost:3001/api/slicer/upload-and-analyze', { method: 'POST' })
       .then((r) => r.json())
       .then((res) => {
         if (res.code === 0 && res.data) {
-          setVideoData(res.data.video);
-          if (res.data.transcripts) {
-            setTranscripts(res.data.transcripts);
-          }
-          setProducts(res.data.products || []);
-          setProductFilter(-1);
-          if (res.data.clips?.length) {
-            setClips(res.data.clips);
-            setActiveClip(res.data.clips[0]);
-          }
+          applyAnalysisResult(res.data);
         }
       })
       .catch(() => {});
@@ -148,15 +101,17 @@ export default function VideoSlicerStudio({ onAddToast }) {
     loadCases();
     loadTraces();
 
-    // 检查 MoneyPrinter 引擎状态
     fetch('http://localhost:3001/api/slicer/status')
       .then((r) => r.json())
       .then((data) => {
-        if (data.code === 0) {
-          setServerStatus(data);
-        }
+        if (data.code === 0) setServerStatus(data);
       })
       .catch(() => {});
+
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (eventSourceRef.current) eventSourceRef.current.close();
+    };
   }, []);
 
   const loadTraces = () => {
@@ -173,32 +128,41 @@ export default function VideoSlicerStudio({ onAddToast }) {
       .catch(() => {});
   };
 
-  // 案例库：拉取 / 载入 / 删除
   const loadCases = () =>
     fetch('http://localhost:3001/api/slicer/cases')
       .then((r) => r.json())
       .then((res) => res.code === 0 && setCases(res.data))
       .catch(() => {});
 
-  const applyAnalysis = (data) => {
-    setVideoData(data.video);
-    if (data.transcripts) setTranscripts(data.transcripts);
-    setProducts(data.products || []);
+  const applyAnalysisResult = (data) => {
+    if (data.video) setVideoData(data.video);
+    if (data.transcripts) {
+      setTranscripts(data.transcripts);
+      if (data.transcripts.sentences?.length > 0) {
+        setKaraokeText(data.transcripts.sentences[0].text);
+      }
+    }
+    const prods = data.products || [];
+    setProducts(prods);
     setProductFilter(-1);
     if (data.clips?.length) {
       setClips(data.clips);
       setActiveClip(data.clips[0]);
     }
-    setIsPlaying(false);
-    setCurrentTime(0);
+    setIsPipelineLocked(false);
+    setIsStreaming(false);
+    setPipelineProgress(100);
+    setPipelineStageBadge('Step 4: 规划完成');
+    setPipelineStatusText('全链路切片完成！已自动存入案例库');
   };
 
   const handleOpenCase = async (id) => {
     try {
       const res = await fetch(`http://localhost:3001/api/slicer/cases/${encodeURIComponent(id)}`).then((r) => r.json());
       if (res.code === 0) {
-        applyAnalysis(res.data);
+        applyAnalysisResult(res.data);
         setCasesOpen(false);
+        onAddToast && onAddToast(`已成功载入案例: ${res.data.video?.fileName || id}`);
       }
     } catch (err) {
       onAddToast && onAddToast(`载入案例失败: ${err.message}`);
@@ -210,8 +174,173 @@ export default function VideoSlicerStudio({ onAddToast }) {
     loadCases();
   };
 
-  // 2. 选择切片时，播放器立即精确定位到该切片的起始时间点并播放
-  const handleSelectClip = (clip) => {
+  // 核心：启动流式处理（支持重新演示或上传真实长视频）
+  const startStreamingJob = async (file = null) => {
+    // 1. 初始化重置
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (eventSourceRef.current) eventSourceRef.current.close();
+
+    setIsStreaming(true);
+    setIsPipelineLocked(true);
+    setPipelineProgress(5);
+    setPipelineStageBadge('Step 1: 探测与抽取音频');
+    setPipelineStatusText('正在通过 FFmpeg 提取 16kHz 单声道音频...');
+    setProducts([]);
+    setClips([]);
+    setActiveClip(null);
+    setProductFilter(-1);
+    setElapsed(0);
+
+    const startedAt = Date.now();
+    timerIntervalRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    // 2. 建立原生 SSE 长连接监听
+    const sse = new EventSource(`http://localhost:3001/api/slicer/stream/${jobId}`);
+    eventSourceRef.current = sse;
+
+    sse.addEventListener('progress', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.percent) setPipelineProgress(data.percent);
+        if (data.label) setPipelineStatusText(data.label);
+      } catch {}
+    });
+
+    sse.addEventListener('asr_ready', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.transcripts) {
+          setTranscripts(data.transcripts);
+          if (data.transcripts.sentences?.length > 0) {
+            setKaraokeText(data.transcripts.sentences[0].text);
+          }
+        }
+        setPipelineStageBadge('Step 2: ASR 识别完成');
+        if (data.percent) setPipelineProgress(data.percent);
+        if (data.label) setPipelineStatusText(data.label);
+      } catch {}
+    });
+
+    sse.addEventListener('products_ready', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.products) {
+          setProducts(data.products);
+          setPipelineStageBadge(`Step 3: 划分 ${data.products.length} 个单品区间`);
+        }
+        if (data.percent) setPipelineProgress(data.percent);
+        if (data.label) setPipelineStatusText(data.label);
+      } catch {}
+    });
+
+    sse.addEventListener('clips_batch', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.clips && data.clips.length > 0) {
+          setClips((prev) => {
+            const existingIds = new Set(prev.map((c) => c.id));
+            const newClips = data.clips.filter((c) => !existingIds.has(c.id));
+            return [...prev, ...newClips];
+          });
+          if (data.clips[0]?.caption) {
+            setKaraokeText(data.clips[0].caption);
+          }
+          if (cardsContainerRef.current) {
+            setTimeout(() => {
+              cardsContainerRef.current.scrollTop = cardsContainerRef.current.scrollHeight;
+            }, 100);
+          }
+        }
+        if (data.percent) setPipelineProgress(data.percent);
+        if (data.label) setPipelineStatusText(data.label);
+      } catch {}
+    });
+
+    sse.addEventListener('complete', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.video) setVideoData(data.video);
+        if (data.products) setProducts(data.products);
+        if (data.clips) {
+          setClips(data.clips);
+          setActiveClip(data.clips[0]);
+        }
+      } catch {}
+
+      // 解冻
+      setIsPipelineLocked(false);
+      setIsStreaming(false);
+      setPipelineProgress(100);
+      setPipelineStageBadge('Step 4: 规划完成');
+      setPipelineStatusText('全链路切片完成！已自动存入案例库');
+      clearInterval(timerIntervalRef.current);
+      sse.close();
+      eventSourceRef.current = null;
+      loadTraces();
+      loadCases();
+      onAddToast && onAddToast('切片流水线规划完成！卡片已全部解锁，可自由点击试看与下载。');
+    });
+
+    sse.onerror = () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+
+    // 3. 触发后端执行
+    try {
+      const formData = new FormData();
+      formData.append('jobId', jobId);
+      if (file) {
+        formData.append('video', file);
+      }
+
+      const res = await fetch('http://localhost:3001/api/slicer/upload-and-analyze', {
+        method: 'POST',
+        body: formData
+      });
+      const json = await res.json();
+      // 若此时 SSE 已经断开或未收到 complete，才使用 POST 结果进行保底
+      if (!eventSourceRef.current && json.code === 0 && json.data) {
+        if (json.data.video) setVideoData(json.data.video);
+        if (json.data.transcripts) setTranscripts(json.data.transcripts);
+        if (json.data.products) setProducts(json.data.products);
+        if (json.data.clips?.length) {
+          setClips(json.data.clips);
+          setActiveClip(json.data.clips[0]);
+        }
+        setIsPipelineLocked(false);
+        setIsStreaming(false);
+        setPipelineProgress(100);
+        setPipelineStageBadge('Step 4: 规划完成');
+        setPipelineStatusText('全链路切片完成！已自动存入案例库');
+        clearInterval(timerIntervalRef.current);
+        loadTraces();
+        loadCases();
+      }
+    } catch (err) {
+      console.warn('流式分析异常或已由 SSE 消费:', err);
+      if (isStreaming && !eventSourceRef.current) {
+        setIsPipelineLocked(false);
+        setIsStreaming(false);
+        clearInterval(timerIntervalRef.current);
+      }
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // 点击卡片安全防打断处理
+  const handleCardClick = (clip) => {
+    if (isPipelineLocked) {
+      onAddToast && onAddToast('切片流水线处理中，暂时冻结交互以避免打断任务...');
+      return;
+    }
     setActiveClip(clip);
     if (videoRef.current) {
       videoRef.current.currentTime = clip.startSeconds;
@@ -220,36 +349,26 @@ export default function VideoSlicerStudio({ onAddToast }) {
     }
   };
 
-  // 3. 点击某句台词时，播放器跳到该句开始时间
-  const handleSelectSentence = (sentence) => {
-    if (videoRef.current) {
-      const targetSec = sentence.begin_time / 1000;
-      videoRef.current.currentTime = targetSec;
-      videoRef.current.play().catch(() => {});
-      setIsPlaying(true);
-    }
-  };
-
-  // 4. 视频播放时间更新：保持在当前切片区间循环试看，并高亮实时台词
+  // 播放器时间更新
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
     const curr = videoRef.current.currentTime;
     setCurrentTime(curr);
 
-    // 计算当前口播的台词
     const currMs = curr * 1000;
-    const activeIdx = transcripts.sentences.findIndex(
+    const activeIdx = transcripts.sentences?.findIndex(
       (s) => currMs >= s.begin_time && currMs <= s.end_time
     );
-    setActiveSentenceIndex(activeIdx);
+    if (activeIdx !== undefined && activeIdx !== -1) {
+      setActiveSentenceIndex(activeIdx);
+      setKaraokeText(transcripts.sentences[activeIdx].text);
+    }
 
     if (activeClip && curr >= activeClip.endSeconds) {
-      // 循环回切片起点
       videoRef.current.currentTime = activeClip.startSeconds;
     }
   };
 
-  // 5. 播放 / 暂停切换
   const handleTogglePlay = () => {
     if (!videoRef.current) return;
     if (isPlaying) {
@@ -261,65 +380,9 @@ export default function VideoSlicerStudio({ onAddToast }) {
     }
   };
 
-  // 6. 真实上传本地长视频并执行 ASR + Qwen 分析
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploading(true);
-    try {
-      const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      setProgressStep(0);
-      setElapsed(0);
-      const startedAt = Date.now();
-      const timer = setInterval(async () => {
-        setElapsed(Math.floor((Date.now() - startedAt) / 1000));
-        try {
-          const pr = await fetch(`http://localhost:3001/api/slicer/progress/${jobId}`).then((r) => r.json());
-          if (pr.code === 0) setProgressStep(pr.data.step);
-        } catch {}
-      }, 1000);
-      progressTimerRef.current = timer;
-
-      const formData = new FormData();
-      formData.append('jobId', jobId);
-      formData.append('video', file);
-
-      const res = await fetch('http://localhost:3001/api/slicer/upload-and-analyze', {
-        method: 'POST',
-        body: formData
-      });
-
-      const json = await res.json();
-      if (json.code === 0 && json.data) {
-        setVideoData(json.data.video);
-        if (json.data.transcripts) {
-          setTranscripts(json.data.transcripts);
-        }
-        setProducts(json.data.products || []);
-        setProductFilter(-1);
-        if (json.data.clips?.length) {
-          setClips(json.data.clips);
-          setActiveClip(json.data.clips[0]);
-        }
-        loadCases();
-        loadTraces();
-        onAddToast && onAddToast(`已完成语音转文字及 Qwen 智能高光拆条分析，探测到 ${json.data.clips.length} 个转化高光段`);
-      } else {
-        throw new Error(json.error || '视频解析失败');
-      }
-    } catch (err) {
-      console.error('上传视频解析错误:', err);
-      onAddToast && onAddToast(`视频解析失败: ${err.message}`);
-    } finally {
-      clearInterval(progressTimerRef.current);
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  // 7. 真实物理切片 (调用后端 FFmpeg 裁剪并触发下载)
+  // 物理单条导出
   const handleExportSingle = async (clip) => {
+    if (isPipelineLocked) return;
     setIsCutting(true);
     try {
       const res = await fetch('http://localhost:3001/api/slicer/cut-clip', {
@@ -333,40 +396,32 @@ export default function VideoSlicerStudio({ onAddToast }) {
           clipTitle: clip.title
         })
       });
-
       const json = await res.json();
       if (json.code === 0 && json.data?.downloadUrl) {
-        const downloadUrl = json.data.downloadUrl;
-        // 自动触发浏览器真实下载 (使用 Blob 避免离开当前页面)
-        try {
-          const blobRes = await fetch(downloadUrl);
-          const blob = await blobRes.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = blobUrl;
-          a.download = `${clip.title}_${clip.timeRange.replace(/\s+/g, '')}.mp4`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-        } catch {
-          window.open(downloadUrl, '_blank');
-        }
-
-        onAddToast && onAddToast(`切片导出成功，已自动下载真实 MP4 文件 (${(json.data.sizeBytes / 1024 / 1024).toFixed(2)} MB)`);
+        const blobRes = await fetch(json.data.downloadUrl);
+        const blob = await blobRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${clip.title}_${clip.timeRange.replace(/\s+/g, '')}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        onAddToast && onAddToast(`切片导出成功，已自动下载真实 MP4 (${(json.data.sizeBytes / 1024 / 1024).toFixed(2)} MB)`);
       } else {
         throw new Error(json.error || '切片失败');
       }
     } catch (err) {
-      console.error('物理切片异常:', err);
       onAddToast && onAddToast(`切片导出失败: ${err.message}`);
     } finally {
       setIsCutting(false);
     }
   };
 
-  // 8. 一键物理批量导出所有切片
+  // 物理批量导出
   const handleExportAll = async () => {
+    if (isPipelineLocked) return;
     setIsCutting(true);
     try {
       const res = await fetch('http://localhost:3001/api/slicer/cut-all', {
@@ -377,7 +432,6 @@ export default function VideoSlicerStudio({ onAddToast }) {
           clips: visibleClips
         })
       });
-
       const json = await res.json();
       if (json.code === 0 && json.data?.clips) {
         for (let idx = 0; idx < json.data.clips.length; idx++) {
@@ -398,131 +452,94 @@ export default function VideoSlicerStudio({ onAddToast }) {
           }
           await new Promise((resolve) => setTimeout(resolve, 300));
         }
-
-        onAddToast && onAddToast(`已通过后端 FFmpeg 物理裁剪出全部 ${json.data.clips.length} 条真实带货 MP4 切片并开始下载`);
+        onAddToast && onAddToast(`已通过后端 FFmpeg 裁剪出全部 ${json.data.clips.length} 条带货 MP4 切片并开始下载`);
       } else {
         throw new Error(json.error || '批量导出失败');
       }
     } catch (err) {
-      console.error('批量导出异常:', err);
       onAddToast && onAddToast(`批量切片失败: ${err.message}`);
     } finally {
       setIsCutting(false);
     }
   };
 
-  const PALETTE = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#65a30d'];
-  const colorOf = (i) => PALETTE[(i ?? 0) % PALETTE.length];
   const visibleClips = productFilter < 0 ? clips : clips.filter((c) => c.productIndex === productFilter);
 
-  const toggleRule = (rule) => {
-    setActiveRules((prev) =>
-      prev.includes(rule) ? prev.filter((r) => r !== rule) : [...prev, rule]
-    );
-  };
-
   return (
-    <div className="relative flex-1 flex flex-col h-full bg-[#fcfcfd] overflow-hidden text-neutral-800">
-      {/* 导入分析 Loading 浮层 */}
-      {isUploading && (
-        <div className="absolute inset-0 z-50 flex items-start justify-center pt-40 bg-white/70 backdrop-blur-sm">
-          <div className="w-[380px] rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl">
-            <div className="flex items-center gap-3 mb-5">
-              <Loader2 className="w-5 h-5 animate-spin text-neutral-900" />
-              <div>
-                <div className="text-sm font-semibold text-neutral-900">正在分析视频</div>
-                <div className="text-xs text-neutral-400">已用时 {elapsed}s，长视频可能需要几分钟，请勿关闭页面</div>
-              </div>
-            </div>
-            <div className="h-1.5 rounded-full bg-neutral-100 overflow-hidden mb-5">
-              <div
-                className="h-full bg-neutral-900 transition-all duration-700"
-                style={{ width: `${Math.min(95, ((progressStep + 0.5) / ANALYZE_STEPS.length) * 100)}%` }}
-              />
-            </div>
-            <ul className="space-y-2.5">
-              {ANALYZE_STEPS.map((label, i) => {
-                const done = i < progressStep;
-                const current = i === progressStep;
-                return (
-                  <li key={label} className={`flex items-center gap-2.5 text-xs ${done || current ? 'text-neutral-900' : 'text-neutral-300'}`}>
-                    {done ? (
-                      <Check className="w-4 h-4 text-emerald-600" />
-                    ) : current ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <span className="w-4 h-4 rounded-full border border-neutral-200" />
-                    )}
-                    <span className={current ? 'font-medium' : ''}>{label}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </div>
-      )}
+    <div className="relative flex-1 flex flex-col h-full bg-[#f8f9fb] text-neutral-800 antialiased overflow-hidden select-none">
+      {/* 顶部流光细进度条 */}
+      <div className="h-0.5 w-full bg-neutral-100 overflow-hidden relative shrink-0">
+        <div
+          className={`h-full transition-all duration-500 ${isStreaming ? 'bg-blue-600' : 'bg-emerald-600'}`}
+          style={{ width: `${pipelineProgress}%` }}
+        />
+        {isStreaming && (
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent w-full animate-shimmer" />
+        )}
+      </div>
 
-      {/* 顶部工具栏与架构指示 */}
-      <header className="min-h-14 py-2 gap-y-2 flex-wrap border-b border-neutral-200/80 bg-white/90 backdrop-blur px-6 flex items-center justify-between shrink-0 z-10 [&_button]:whitespace-nowrap [&_a]:whitespace-nowrap [&_span]:whitespace-nowrap">
+      {/* 顶部导航与控制器 */}
+      <header className="h-16 border-b border-neutral-200 bg-white/95 backdrop-blur px-6 flex items-center justify-between shrink-0 sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs text-neutral-500 font-medium">
-            <span>识别模式：</span>
-            {['语音破价锚点', '微距特写帧', '加购波峰', '矩阵自动去重'].map((rule) => {
-              const active = activeRules.includes(rule);
-              return (
-                <button
-                  key={rule}
-                  onClick={() => toggleRule(rule)}
-                  className={`px-2.5 py-1 rounded-full text-xs transition-all ${
-                    active
-                      ? 'bg-neutral-900 text-white font-medium shadow-sm'
-                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                  }`}
-                >
-                  {rule}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2 font-bold text-sm text-neutral-900 tracking-tight">
+            <Scissors className="w-5 h-5 text-neutral-900" />
+            <span>智能切片流水线</span>
           </div>
 
-          <div className="h-4 w-px bg-neutral-200" />
+          <div className="h-4 w-px bg-neutral-200 mx-1" />
 
-          {/* 架构就绪状态药丸 */}
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-              <Mic className="w-3.5 h-3.5 text-emerald-600" />
-              Paraformer ASR 就绪
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200/60">
-              <Cpu className="w-3.5 h-3.5 text-blue-600" />
-              Qwen 语义高光挖掘
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-neutral-100 text-neutral-700 border border-neutral-200">
-              <Scissors className="w-3.5 h-3.5 text-neutral-600" />
-              FFmpeg 物理裁剪
-            </span>
+          {/* 核心流光进度胶囊 (Progress Pill) */}
+          <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 ${
+              isStreaming
+                ? 'bg-blue-50 border border-blue-200/80 text-blue-900 shadow-2xs'
+                : 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isStreaming ? 'bg-blue-600 animate-ping' : 'bg-emerald-600'
+              }`}
+            />
+            <span className="font-sans">{pipelineStatusText}</span>
+            {isStreaming && (
+              <span className="font-mono text-blue-600/80 text-[11px]">({elapsed}s)</span>
+            )}
+            {!isStreaming && elapsed > 0 && (
+              <span className="font-mono text-emerald-700 text-[11px]">(用时 {elapsed}s)</span>
+            )}
           </div>
         </div>
 
+        {/* 顶部右侧控制器 */}
         <div className="flex items-center gap-3">
-                    <button
-            onClick={() => { setTracesOpen(!tracesOpen); loadTraces(); }}
+          {/* DSH Trace 抽屉按钮 */}
+          <button
+            onClick={() => {
+              setTracesOpen(!tracesOpen);
+              loadTraces();
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-2xs"
             title="查看 DeepSeek Harness (DSH) 底层大模型调用 Trace 链"
           >
             <Terminal className="w-3.5 h-3.5 text-blue-600" />
             <span>DSH Trace ({traces.length})</span>
           </button>
+
+          {/* 案例库下拉 */}
           <div className="relative">
             <button
-              onClick={() => { setCasesOpen(!casesOpen); loadCases(); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white"
+              onClick={() => {
+                setCasesOpen(!casesOpen);
+                loadCases();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-2xs"
             >
               <FolderOpen className="w-3.5 h-3.5" />
               <span>案例库 ({cases.length})</span>
             </button>
             {casesOpen && (
-              <div className="absolute right-0 top-full mt-2 w-[360px] max-h-[420px] overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-xl z-40 p-2">
+              <div className="absolute right-0 top-full mt-2 w-[340px] max-h-[380px] overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-xl z-40 p-2">
                 {cases.length === 0 && (
                   <div className="p-4 text-xs text-neutral-400 text-center">暂无案例，导入视频分析后会自动保存</div>
                 )}
@@ -530,17 +547,21 @@ export default function VideoSlicerStudio({ onAddToast }) {
                   <div
                     key={cs.id}
                     onClick={() => handleOpenCase(cs.id)}
-                    className={`group flex items-start justify-between gap-2 p-3 rounded-lg cursor-pointer hover:bg-neutral-50 ${videoData.id === cs.id ? 'bg-neutral-50 ring-1 ring-neutral-200' : ''}`}
+                    className={`group flex items-start justify-between gap-2 p-3 rounded-lg cursor-pointer hover:bg-neutral-50 ${
+                      videoData.id === cs.id ? 'bg-neutral-50 ring-1 ring-neutral-200' : ''
+                    }`}
                   >
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-neutral-900 truncate">{cs.name}</div>
                       <div className="mt-1 text-[11px] text-neutral-400">
                         {cs.product_count} 个产品 / {cs.clip_count} 条切片 / {Math.floor(cs.duration / 60)}分{cs.duration % 60}秒
                       </div>
-                      <div className="text-[11px] text-neutral-300">{new Date(cs.created_at).toLocaleString()}</div>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteCase(cs.id); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCase(cs.id);
+                      }}
                       className="p-1 rounded text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                       title="删除案例"
                     >
@@ -556,61 +577,75 @@ export default function VideoSlicerStudio({ onAddToast }) {
             href={serverStatus.webuiUrl}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-2xs"
             title="在新标签页打开 MoneyPrinterTurbo 专属可视化剪辑工作台"
           >
-            <span>切片工作台 WebUI</span>
+            <span>工作台 WebUI</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
 
+          {/* 导入长视频文件上传 */}
           <input
             type="file"
             ref={fileInputRef}
-            onChange={handleFileUpload}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) startStreamingJob(file);
+            }}
             accept="video/*"
             className="hidden"
           />
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isStreaming}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-medium transition-colors disabled:opacity-50"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>{isUploading ? '正在转写解析...' : '导入长视频/回放'}</span>
+            <span>导入长视频/回放</span>
           </button>
 
+          {/* 重新演示流式模拟处理 */}
           <button
-            onClick={handleExportAll}
-            disabled={isCutting}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-neutral-900 hover:bg-black text-white text-xs font-medium transition-all shadow-sm active:scale-95 disabled:opacity-50"
+            onClick={() => startStreamingJob(null)}
+            disabled={isStreaming}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-black text-white text-xs font-medium transition shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>{isCutting ? '正在物理裁剪...' : `一键导出${productFilter >= 0 ? '该产品' : '全部'} ${visibleClips.length} 条切片`}</span>
+            <RotateCcw className={`w-3.5 h-3.5 ${isStreaming ? 'animate-spin' : ''}`} />
+            <span>{isStreaming ? '正在流式处理...' : '重新演示流式处理'}</span>
           </button>
         </div>
       </header>
 
-      {/* 主体工作区 */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：原生视频流媒体预览与时间轴联动 */}
-        <div className="flex-1 flex flex-col p-6 overflow-y-auto">
+      {/* 主体工作台区域 */}
+      <main className="flex-1 flex overflow-hidden p-6 gap-6 max-w-[1600px] w-full mx-auto">
+        {/* 左侧：长视频预览与渐进式时空轨道 */}
+        <section className="flex-1 flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-6 overflow-hidden">
           {/* 视频信息栏 */}
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">当前解析素材：</span>
-              <span className="text-sm font-semibold text-neutral-800">{videoData.fileName}</span>
-              <span className="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono">
-                {videoData.durationFormatted} ({videoData.width}x{videoData.height})
-              </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono">
+                  {videoData.width}x{videoData.height}
+                </span>
+                <h2 className="text-sm font-semibold text-neutral-900 truncate max-w-xl">
+                  {videoData.fileName}
+                </h2>
+              </div>
+              <p className="text-xs text-neutral-400 mt-1">
+                视频总时长: {videoData.durationFormatted} · {products.length > 0 ? `包含 ${products.length} 个带货单品` : '正在解析带货单品...'}
+              </p>
             </div>
-            <div className="text-xs text-neutral-500">
-              已通过 ASR 语音识别并规划 <span className="font-semibold text-neutral-900">{clips.length}</span> 个高光带货峰值区间
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/60 font-medium">
+                {pipelineStageBadge}
+              </span>
             </div>
           </div>
 
-          {/* 真实原生视频播放器视窗 */}
-          <div className="relative w-full aspect-video bg-neutral-950 rounded-2xl overflow-hidden shadow-md flex items-center justify-center border border-neutral-800 group">
+          {/* 视频播放视窗与卡拉OK实时字幕浮层 */}
+          <div className="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group">
             <video
               ref={videoRef}
               src={videoData.videoUrl}
@@ -621,39 +656,38 @@ export default function VideoSlicerStudio({ onAddToast }) {
               onClick={handleTogglePlay}
             />
 
-            {/* 正在口播的字幕浮层 (卡拉OK式实时字幕) */}
-            {activeSentenceIndex >= 0 && transcripts.sentences[activeSentenceIndex] && (
-              <div className="absolute bottom-16 left-6 right-6 flex justify-center pointer-events-none">
-                <div className="max-w-xl px-4 py-2 rounded-xl bg-black/75 backdrop-blur text-white text-sm font-medium text-center shadow-lg border border-white/10 animate-fade-in">
-                  <span className="text-neutral-400 mr-2 text-xs font-mono">
-                    {(transcripts.sentences[activeSentenceIndex].begin_time / 1000).toFixed(1)}s
-                  </span>
-                  {transcripts.sentences[activeSentenceIndex].text}
+            {/* 画面中心状态提示 (未播放时显示) */}
+            {!isPlaying && (
+              <div
+                onClick={handleTogglePlay}
+                className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs cursor-pointer"
+              >
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur mb-3 transition-transform active:scale-95">
+                  <Play className="w-6 h-6 text-white ml-0.5" />
+                </div>
+                <p className="text-sm font-medium text-neutral-200">
+                  {isStreaming ? '正在实时监听分析流水线...' : '点击播放当前切片'}
+                </p>
+              </div>
+            )}
+
+            {/* 卡拉OK实时口播台词浮层 */}
+            {karaokeText && (
+              <div className="absolute bottom-14 left-6 right-6 flex justify-center pointer-events-none z-10">
+                <div className="max-w-xl px-4 py-2 rounded-xl bg-black/80 backdrop-blur text-white text-xs font-medium text-center shadow-lg border border-white/10">
+                  <span className="text-neutral-400 mr-2 font-mono">当前口播:</span>
+                  <span>{karaokeText}</span>
                 </div>
               </div>
             )}
 
-            {/* 悬浮切片金句提示 */}
-            {activeClip && (
-              <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur border border-white/10 text-white text-xs">
-                <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span className="font-medium">{activeClip.caption}</span>
-              </div>
-            )}
-
             {/* 画面内播放控制器 */}
-            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between px-4 py-2 rounded-xl bg-black/50 backdrop-blur border border-white/10 text-white opacity-90 group-hover:opacity-100 transition-opacity">
+            <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between px-4 py-2 rounded-xl bg-black/60 backdrop-blur border border-white/10 text-white opacity-80 group-hover:opacity-100 transition-opacity">
               <div className="flex items-center gap-3">
-                <button
-                  onClick={handleTogglePlay}
-                  className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
-                >
+                <button onClick={handleTogglePlay} className="p-1 rounded hover:bg-white/20 transition-colors">
                   {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </button>
-                <button
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
-                >
+                <button onClick={() => setIsMuted(!isMuted)} className="p-1 rounded hover:bg-white/20 transition-colors">
                   {isMuted ? <VolumeX className="w-4 h-4 text-neutral-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
                 </button>
                 <span className="text-xs font-mono text-neutral-300">
@@ -664,216 +698,267 @@ export default function VideoSlicerStudio({ onAddToast }) {
 
               <div className="flex items-center gap-2">
                 <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {activeClip?.tag || '切片试看中'}
+                  {activeClip?.tag || (isStreaming ? '流水线解析中' : '切片试看就绪')}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* 实时时间轨与切片峰值分布 */}
-          <div className="mt-5 p-4 rounded-xl bg-white border border-neutral-200/80 shadow-xs">
-            <div className="flex items-center justify-between mb-3 text-xs">
+          {/* 渐进式多产品与切片时间轴轨 */}
+          <div className="mt-6 p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
+            <div className="flex items-center justify-between mb-2 text-xs">
               <span className="font-medium text-neutral-700 flex items-center gap-1.5">
                 <Activity className="w-3.5 h-3.5 text-neutral-500" />
-                AI 爆款转化热度轨 (ASR 语义 + 口播破价关键词)
+                多产品时空热度分布轨
               </span>
-              <span className="text-neutral-400 font-mono">
-                当前: {Math.floor(currentTime)}s / 总长: {videoData.durationFormatted}
+              <span className="text-neutral-400 text-[11px]">
+                {products.length > 0 ? `已划分 ${products.length} 个商品区间` : '等待识别商品'}
               </span>
             </div>
 
-            {/* 产品分段色带 */}
-            {products.length > 0 && (
-              <div className="relative h-6 mb-2 bg-neutral-50 rounded-md overflow-hidden border border-neutral-200">
-                {products.map((p) => (
-                  <button
-                    key={p.index}
-                    onClick={() => setProductFilter(productFilter === p.index ? -1 : p.index)}
-                    className="absolute top-0 bottom-0 text-[11px] text-white font-medium truncate px-2 text-left"
-                    style={{
-                      left: `${p.startPct}%`,
-                      width: `${p.widthPct}%`,
-                      background: colorOf(p.index),
-                      opacity: productFilter < 0 || productFilter === p.index ? 1 : 0.3
-                    }}
-                    title={`${p.name}: ${p.sellingPoints}`}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* 时间轴标尺与切片区间 */}
-            <div className="relative h-10 bg-neutral-100 rounded-lg overflow-hidden border border-neutral-200 flex items-center">
-              {/* 播放头游标 */}
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-neutral-900 z-20 pointer-events-none transition-all duration-100"
-                style={{
-                  left: `${videoData.duration > 0 ? (currentTime / videoData.duration) * 100 : 0}%`
-                }}
-              />
-
-              {/* 切片区间色块 */}
-              {visibleClips.map((clip) => {
-                const isActive = activeClip?.id === clip.id;
-                return (
-                  <button
-                    key={clip.id}
-                    onClick={() => handleSelectClip(clip)}
-                    className={`absolute top-1 bottom-1 rounded-md text-xs font-medium flex items-center justify-center transition-all ${
-                      isActive
-                        ? 'bg-neutral-900 text-white shadow-sm ring-2 ring-neutral-900/30 z-10'
-                        : 'bg-white/90 text-neutral-700 hover:bg-neutral-200/80 border border-neutral-300/60'
-                    }`}
-                    style={{
-                      left: `${clip.startPct}%`,
-                      width: `${clip.widthPct}%`
-                    }}
-                    title={`${clip.title} (${clip.timeRange})`}
-                  >
-                    <span className="truncate px-2 text-[11px]">
-                      {clip.title} {clip.durationSeconds}s
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* 右侧：Tab 选项卡 (高光切片 vs ASR 逐字稿) */}
-        <div className="w-[440px] border-l border-neutral-200/80 bg-white flex flex-col shrink-0">
-          {/* Tab 切换栏 */}
-          <div className="p-4 border-b border-neutral-200/80 flex items-center justify-between">
-            <div className="flex items-center gap-1 p-1 bg-neutral-100 rounded-lg">
-              <button
-                onClick={() => setActiveTab('clips')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  activeTab === 'clips'
-                    ? 'bg-white text-neutral-900 shadow-xs'
-                    : 'text-neutral-500 hover:text-neutral-800'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>智能高光切片 ({clips.length})</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('transcripts')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  activeTab === 'transcripts'
-                    ? 'bg-white text-neutral-900 shadow-xs'
-                    : 'text-neutral-500 hover:text-neutral-800'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>ASR 口播逐字稿</span>
-              </button>
-            </div>
-
-            <span className="text-[11px] text-neutral-400">
-              {activeTab === 'clips' ? '点击定位并试看' : '点击台词跳转'}
-            </span>
-          </div>
-
-          {/* Tab 1: 智能高光切片列表 */}
-          {activeTab === 'clips' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {products.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pb-1">
-                  <button
-                    onClick={() => setProductFilter(-1)}
-                    className={`px-2.5 py-1 rounded-full text-xs ${productFilter < 0 ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600'}`}
-                  >
-                    全部产品 ({products.length})
-                  </button>
+            {/* 轨 1: 产品分段色带 (阶段 1 实时挂载) */}
+            <div className="relative h-6 bg-neutral-200/70 rounded-md overflow-hidden mb-2 border border-neutral-300/40">
+              {products.length === 0 ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[11px] text-neutral-400 italic">
+                  等待第一阶段产品识别分段...
+                </div>
+              ) : (
+                <div className="absolute inset-0">
                   {products.map((p) => (
                     <button
                       key={p.index}
-                      onClick={() => setProductFilter(p.index)}
-                      className="px-2.5 py-1 rounded-full text-xs text-white"
-                      style={{ background: colorOf(p.index), opacity: productFilter === p.index || productFilter < 0 ? 1 : 0.4 }}
+                      onClick={() => setProductFilter(productFilter === p.index ? -1 : p.index)}
+                      className="absolute top-0 bottom-0 text-[11px] text-white font-medium truncate px-2 flex items-center transition-all duration-300 hover:brightness-110"
+                      style={{
+                        left: `${p.startPct}%`,
+                        width: `${p.widthPct}%`,
+                        backgroundColor: colorOf(p.index),
+                        opacity: productFilter < 0 || productFilter === p.index ? 1 : 0.35
+                      }}
+                      title={`${p.name} (${p.sellingPoints})`}
                     >
                       {p.name}
                     </button>
                   ))}
                 </div>
               )}
-              {visibleClips.map((clip, ci) => {
-                const showHeader = clip.productName && (ci === 0 || visibleClips[ci - 1].productIndex !== clip.productIndex);
-                const isSelected = activeClip?.id === clip.id;
-                return (
-                  <React.Fragment key={clip.id}>
-                  {showHeader && (
-                    <div className="flex items-center gap-2 pt-2 text-xs font-semibold text-neutral-800">
-                      <span className="w-2 h-2 rounded-full" style={{ background: colorOf(clip.productIndex) }} />
-                      {clip.productName}
-                      <span className="font-normal text-neutral-400">
-                        {products.find((p) => p.index === clip.productIndex)?.sellingPoints}
-                      </span>
-                    </div>
-                  )}
-                  <div
-                    onClick={() => handleSelectClip(clip)}
-                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-neutral-900 bg-neutral-50/50 shadow-xs ring-1 ring-neutral-900'
-                        : 'border-neutral-200/80 hover:border-neutral-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 font-medium text-neutral-700">
-                          {clip.tag}
-                        </span>
-                        <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          分值 {clip.score}
-                        </span>
-                      </div>
-                      <span className="text-xs font-mono text-neutral-400">
-                        {clip.timeRange} ({clip.durationSeconds}s)
-                      </span>
-                    </div>
+            </div>
 
-                    <h4 className="text-sm font-semibold text-neutral-900 mb-1.5">
-                      {clip.title}
-                    </h4>
-
-                    {/* 大模型提炼的钩子金句 */}
-                    <div className="p-2.5 rounded-lg bg-neutral-100/70 border border-neutral-200/60 text-xs text-neutral-700 mb-2 font-medium">
-                      {clip.caption}
-                    </div>
-
-                    {/* 对应的台词摘录 */}
-                    {clip.transcriptSnippet && (
-                      <p className="text-xs text-neutral-500 line-clamp-2 mb-3 leading-relaxed">
-                        台词：{clip.transcriptSnippet}
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-xs">
-                      <span className="text-neutral-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {clip.timeRange}
-                      </span>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleExportSingle(clip);
+            {/* 轨 2: 细分环节切片色块 (阶段 2 实时挂载) */}
+            <div className="relative h-8 bg-neutral-100 rounded-md overflow-hidden border border-neutral-200 flex items-center">
+              {clips.length === 0 ? (
+                <div className="w-full text-center text-[11px] text-neutral-400 italic">
+                  等待第二阶段逐产品切片规划...
+                </div>
+              ) : (
+                <div className="absolute inset-0">
+                  {visibleClips.map((clip) => {
+                    const isSelected = activeClip?.id === clip.id;
+                    return (
+                      <div
+                        key={clip.id}
+                        onClick={() => handleCardClick(clip)}
+                        className={`absolute top-1 bottom-1 rounded text-[10px] text-neutral-800 bg-white/90 border font-mono flex items-center justify-center overflow-hidden fade-in-up cursor-pointer transition-all ${
+                          isSelected ? 'border-neutral-900 bg-neutral-900 text-white font-bold' : 'border-neutral-300 hover:border-neutral-500'
+                        }`}
+                        style={{
+                          left: `${clip.startPct}%`,
+                          width: `${clip.widthPct}%`
                         }}
-                        disabled={isCutting}
-                        className="flex items-center gap-1 px-3 py-1 rounded-md bg-neutral-900 hover:bg-black text-white text-xs font-medium transition-all shadow-2xs active:scale-95 disabled:opacity-50"
+                        title={`${clip.productName || ''} · ${clip.tag} (${clip.timeRange})`}
                       >
-                        <Download className="w-3 h-3" />
-                        <span>{isCutting ? '裁剪中...' : '物理裁剪导出 (MP4)'}</span>
-                      </button>
-                    </div>
-                  </div>
-                  </React.Fragment>
-                );
-              })}
+                        {clip.tag}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 商品筛选快速胶囊 */}
+            {products.length > 0 && (
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-neutral-400">商品筛选:</span>
+                <button
+                  onClick={() => setProductFilter(-1)}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition ${
+                    productFilter === -1 ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  }`}
+                >
+                  全部 ({clips.length})
+                </button>
+                {products.map((p) => {
+                  const pClipsCount = clips.filter((c) => c.productIndex === p.index).length;
+                  const isSel = productFilter === p.index;
+                  return (
+                    <button
+                      key={p.index}
+                      onClick={() => setProductFilter(isSel ? -1 : p.index)}
+                      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium transition ${
+                        isSel ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorOf(p.index) }} />
+                      <span>{p.name}</span>
+                      <span className="text-[10px] opacity-70 font-mono">({pClipsCount})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* 右侧：渐进式生成列表与安全冻结展示区 */}
+        <aside className="w-[460px] flex flex-col bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden shrink-0">
+          {/* 列表标题栏 */}
+          <div className="p-4 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/50">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-700">实时产出切片卡片</h3>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-200/70 text-neutral-700 font-semibold">
+                {visibleClips.length} 条
+              </span>
+            </div>
+
+            {/* 安全锁定状态标签 */}
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                isPipelineLocked
+                  ? 'bg-amber-50 border border-amber-200 text-amber-800'
+                  : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              }`}
+            >
+              {isPipelineLocked ? (
+                <>
+                  <Lock className="w-3 h-3 text-amber-600" />
+                  <span>安全冻结：处理中禁止操作</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>已解锁：自由试看与导出</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* 选项卡切换: 切片列表 / ASR 逐字稿 */}
+          <div className="flex border-b border-neutral-200 bg-white px-4 text-xs font-medium">
+            <button
+              onClick={() => setActiveTab('clips')}
+              className={`flex items-center gap-1.5 py-2.5 border-b-2 mr-4 transition-colors ${
+                activeTab === 'clips' ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-400 hover:text-neutral-700'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>切片列表 ({visibleClips.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('transcripts')}
+              className={`flex items-center gap-1.5 py-2.5 border-b-2 transition-colors ${
+                activeTab === 'transcripts' ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-400 hover:text-neutral-700'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>ASR 逐字稿 ({transcripts.sentences?.length || 0})</span>
+            </button>
+          </div>
+
+          {/* 实时流式切片容器 */}
+          {activeTab === 'clips' && (
+            <div ref={cardsContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 relative">
+              {clips.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-400">
+                  <div className="w-10 h-10 rounded-full border-2 border-neutral-200 border-t-blue-600 animate-spin mb-3" />
+                  <p className="text-xs font-medium text-neutral-600">正在与后台 AI 流水线建立连接</p>
+                  <p className="text-[11px] text-neutral-400 mt-1">处理完毕的片段将实时在此处逐步浮现</p>
+                </div>
+              ) : (
+                visibleClips.map((clip, ci) => {
+                  const isSelected = activeClip?.id === clip.id;
+                  const showHeader =
+                    clip.productName &&
+                    (ci === 0 || visibleClips[ci - 1].productIndex !== clip.productIndex);
+
+                  return (
+                    <React.Fragment key={clip.id || ci}>
+                      {showHeader && (
+                        <div className="flex items-center gap-2 pt-1 text-xs font-semibold text-neutral-800">
+                          <span className="w-2 h-2 rounded-full" style={{ background: colorOf(clip.productIndex) }} />
+                          <span>{clip.productName}</span>
+                          <span className="font-normal text-neutral-400 text-[11px]">
+                            {products.find((p) => p.index === clip.productIndex)?.sellingPoints}
+                          </span>
+                        </div>
+                      )}
+
+                      <div
+                        onClick={() => handleCardClick(clip)}
+                        className={`clip-card fade-in-up p-3.5 rounded-xl border bg-white shadow-2xs relative overflow-hidden transition-all duration-300 cursor-pointer ${
+                          isPipelineLocked
+                            ? 'pulse-card border-blue-300'
+                            : isSelected
+                            ? 'border-neutral-900 ring-1 ring-neutral-900 bg-neutral-50/50'
+                            : 'border-neutral-200 hover:border-neutral-400'
+                        }`}
+                      >
+                        {/* 冻结只读遮罩指示 */}
+                        {isPipelineLocked && (
+                          <div className="card-lock-badge absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-[10px] text-blue-700 font-medium">
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                            <span>规划中 (只读)</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="w-2 h-2 rounded-full" style={{ background: colorOf(clip.productIndex) }} />
+                          <span className="text-xs font-semibold text-neutral-900">{clip.productName || '单品'}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 font-medium text-neutral-700">
+                            {clip.tag}
+                          </span>
+                          <span className="text-xs font-mono text-emerald-600 font-semibold ml-auto">
+                            分值 {clip.score}
+                          </span>
+                        </div>
+
+                        {/* 钩子金句气泡 */}
+                        <div className="p-2 rounded-lg bg-neutral-50 border border-neutral-200/60 text-xs font-medium text-neutral-800 mb-2">
+                          {clip.caption}
+                        </div>
+
+                        {/* 台词摘录 */}
+                        {clip.transcriptSnippet && (
+                          <p className="text-[11px] text-neutral-500 line-clamp-1 mb-2.5 leading-relaxed">
+                            台词：{clip.transcriptSnippet}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[11px] text-neutral-400">
+                          <span className="font-mono">
+                            {clip.timeRange} ({clip.durationSeconds}s)
+                          </span>
+
+                          <button
+                            disabled={isPipelineLocked || isCutting}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExportSingle(clip);
+                            }}
+                            className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition ${
+                              isPipelineLocked || isCutting
+                                ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                                : 'bg-neutral-900 hover:bg-black text-white cursor-pointer active:scale-95'
+                            }`}
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>{isPipelineLocked ? '处理中...' : isCutting ? '裁剪中...' : '导出 MP4'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  );
+                })
+              )}
             </div>
           )}
 
@@ -899,7 +984,13 @@ export default function VideoSlicerStudio({ onAddToast }) {
                 return (
                   <div
                     key={sentence.sentence_id || idx}
-                    onClick={() => handleSelectSentence(sentence)}
+                    onClick={() => {
+                      if (videoRef.current) {
+                        videoRef.current.currentTime = sentence.begin_time / 1000;
+                        videoRef.current.play().catch(() => {});
+                        setIsPlaying(true);
+                      }
+                    }}
                     className={`p-3 rounded-xl border transition-all cursor-pointer ${
                       isActive
                         ? 'border-neutral-900 bg-neutral-900 text-white shadow-xs'
@@ -928,8 +1019,39 @@ export default function VideoSlicerStudio({ onAddToast }) {
               })}
             </div>
           )}
-        </div>
-      </div>
+
+          {/* 底部批量导出栏 */}
+          <div className="p-4 border-t border-neutral-200 bg-neutral-50/70 flex items-center justify-between">
+            <div className="text-xs text-neutral-500">
+              <span>
+                {isPipelineLocked
+                  ? '等待所有产品切片生成完成...'
+                  : `全部 ${products.length} 个商品切片已准备完毕`}
+              </span>
+            </div>
+
+            <button
+              id="btnBatchExport"
+              disabled={isPipelineLocked || isCutting || visibleClips.length === 0}
+              onClick={handleExportAll}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition shadow-2xs ${
+                isPipelineLocked || isCutting || visibleClips.length === 0
+                  ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                  : 'bg-neutral-900 hover:bg-black text-white cursor-pointer active:scale-95 shadow-sm'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>
+                {isPipelineLocked
+                  ? '流水线处理中 (锁定)'
+                  : isCutting
+                  ? '正在物理裁剪...'
+                  : `一键导出全部 ${visibleClips.length} 条切片`}
+              </span>
+            </button>
+          </div>
+        </aside>
+      </main>
 
       {/* DSH 全局调用 Trace 追踪抽屉 */}
       {tracesOpen && (

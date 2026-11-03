@@ -1,7 +1,8 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { swaggerUI } from '@hono/swagger-ui';
 import { cors } from 'hono/cors';
-import { streamText } from 'hono/streaming';
+import { streamText, streamSSE } from 'hono/streaming';
+import { EventEmitter } from 'node:events';
 import { serve } from '@hono/node-server';
 import { Context } from '@deepseek-ai/cordis';
 import dotenv from 'dotenv';
@@ -361,6 +362,89 @@ app.get('/api/dsh/traces/:traceId', (c) => {
   return c.json({ code: 0, data: trace });
 });
 
+// SSE 实时流式事件管理器 (支持切片、字幕、产品渐进式推送与断线回放)
+class SlicerJobManager {
+  private jobs = new Map<string, {
+    emitter: EventEmitter;
+    status: 'running' | 'completed' | 'failed';
+    events: Array<{ event: string; data: any }>;
+  }>();
+
+  getOrCreate(jobId: string) {
+    if (!this.jobs.has(jobId)) {
+      this.jobs.set(jobId, {
+        emitter: new EventEmitter(),
+        status: 'running',
+        events: [],
+      });
+    }
+    return this.jobs.get(jobId)!;
+  }
+
+  emit(jobId: string, event: string, data: any) {
+    const job = this.getOrCreate(jobId);
+    job.events.push({ event, data });
+    job.emitter.emit('sse', { event, data });
+  }
+
+  complete(jobId: string, data: any) {
+    const job = this.getOrCreate(jobId);
+    job.status = 'completed';
+    this.emit(jobId, 'complete', data);
+  }
+}
+const slicerJobManager = new SlicerJobManager();
+
+// 原生 SSE (Server-Sent Events) 长连接订阅路由
+app.get('/api/slicer/stream/:jobId', (c) => {
+  const jobId = c.req.param('jobId');
+  const job = slicerJobManager.getOrCreate(jobId);
+
+  return streamSSE(c, async (stream) => {
+    // 1. 先补发历史已发生的事件
+    for (const h of job.events) {
+      await stream.writeSSE({
+        event: h.event,
+        data: JSON.stringify(h.data),
+      });
+    }
+
+    // 2. 监听新的流式推送
+    const onSSE = async (msg: { event: string; data: any }) => {
+      try {
+        await stream.writeSSE({
+          event: msg.event,
+          data: JSON.stringify(msg.data),
+        });
+      } catch {
+        // 连接关闭
+      }
+    };
+
+    job.emitter.on('sse', onSSE);
+
+    // 15s 心跳
+    const keepAlive = setInterval(async () => {
+      try {
+        await stream.writeSSE({ event: 'ping', data: '1' });
+      } catch {
+        clearInterval(keepAlive);
+      }
+    }, 15000);
+
+    stream.onAbort(() => {
+      clearInterval(keepAlive);
+      job.emitter.off('sse', onSSE);
+    });
+
+    while (job.status === 'running') {
+      await stream.sleep(1000);
+    }
+    clearInterval(keepAlive);
+    job.emitter.off('sse', onSSE);
+  });
+});
+
 // 分析进度 (内存态，供前端轮询展示 Loading 步骤)
 const slicerProgress = new Map<string, { step: number; label: string; done: boolean }>();
 app.get('/api/slicer/progress/:jobId', (c) => {
@@ -415,7 +499,7 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
     // 检查是否有历史 ASR 分析缓存
     const cacheKey = `${path.basename(savedFilePath, path.extname(savedFilePath))}.json`;
     const cachePath = path.join(cacheDir, cacheKey);
-    let analysisResult;
+    let analysisResult: any;
 
     if (!isUpload && fs.existsSync(cachePath)) {
       try {
@@ -425,6 +509,44 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
           analysisResult = cached;
           if (!SlicerCaseDao.get(fileId)) {
             SlicerCaseDao.save({ id: fileId, name: originalName, videoFile: savedFileName, result: cached });
+          }
+          // 若命中缓存且有 jobId 订阅流，渐进式重放事件让用户清晰感受流式拆条过程
+          if (jobId) {
+            setTimeout(async () => {
+              slicerJobManager.emit(jobId, 'progress', { step: 0, label: '正在探测视频信息与分辨率...', percent: 15 });
+              await new Promise((r) => setTimeout(r, 700));
+              slicerJobManager.emit(jobId, 'asr_ready', {
+                transcripts: analysisResult.transcripts,
+                percent: 40,
+                label: `语音识别完成 (共 ${analysisResult.transcripts?.sentences?.length || 0} 句字幕)，正在进入 Qwen 产品语义分段...`
+              });
+              await new Promise((r) => setTimeout(r, 900));
+              const prods = analysisResult.products || [];
+              slicerJobManager.emit(jobId, 'products_ready', {
+                products: prods,
+                percent: 55,
+                label: `识别到 ${prods.length} 个带货单品区间，正在逐产品规划高光切片...`
+              });
+              const allClips = analysisResult.clips || [];
+              for (let i = 0; i < allClips.length; i++) {
+                await new Promise((r) => setTimeout(r, 600));
+                const c = allClips[i];
+                const pct = 55 + Math.round(((i + 1) / Math.max(1, allClips.length)) * 40);
+                slicerJobManager.emit(jobId, 'clips_batch', {
+                  productIndex: c.productIndex,
+                  productName: c.productName,
+                  clips: [c],
+                  percent: pct,
+                  label: `【${c.productName || '商品'}】切片规划就绪「${c.tag}」(${c.timeRange})...`
+                });
+              }
+              await new Promise((r) => setTimeout(r, 600));
+              slicerJobManager.complete(jobId, {
+                ...analysisResult,
+                percent: 100,
+                label: `全链路切片完成！共规划 ${prods.length} 个商品、${allClips.length} 条切片`,
+              });
+            }, 100);
           }
         }
       } catch {
@@ -441,12 +563,18 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
         originalName,
         videoUrl,
         (step, label) => { if (jobId) slicerProgress.set(jobId, { step, label, done: false }); },
-        jobId
+        jobId,
+        (event, payload) => {
+          if (jobId) slicerJobManager.emit(jobId, event, payload);
+        }
       );
       // 写入持久化缓存
       fs.writeFileSync(cachePath, JSON.stringify(analysisResult, null, 2), 'utf-8');
       // 存入数据库案例库，可作为 Demo 长期保留
       SlicerCaseDao.save({ id: fileId, name: originalName, videoFile: savedFileName, result: analysisResult });
+      if (jobId) {
+        slicerJobManager.complete(jobId, analysisResult);
+      }
     }
 
     if (jobId) {

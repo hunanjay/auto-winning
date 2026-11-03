@@ -414,13 +414,14 @@ async function clipsForProduct(
 }
 
 /**
- * 两阶段高光分析：先按产品分段，再逐产品按带货环节切片 (走 DSH 微内核)
+ * 两阶段高光分析：先按产品分段，再逐产品按带货环节切片 (走 DSH 微内核，支持流式逐步推送)
  */
 export async function analyzeProductsAndClips(
   ctx: Context,
   sentences: SentenceItem[],
   totalDuration: number,
-  jobId?: string
+  jobId?: string,
+  onEvent?: (event: string, payload: any) => void
 ): Promise<{ products: ProductSegment[]; clips: HighlightClip[] }> {
   const segs = await segmentProducts(ctx, sentences, jobId);
   const products: ProductSegment[] = [];
@@ -429,10 +430,6 @@ export async function analyzeProductsAndClips(
   for (let i = 0; i < segs.length; i++) {
     const seg = segs[i];
     const range = snapToSentences(sentences, sentences[seg.startIdx].begin_time / 1000, sentences[seg.endIdx].end_time / 1000);
-    const productClips = await clipsForProduct(ctx, i, seg, sentences, totalDuration, jobId).catch((err) => {
-      console.warn(`产品 ${seg.productName} 切片分析失败:`, err);
-      return [] as HighlightClip[];
-    });
     products.push({
       index: i,
       name: seg.productName,
@@ -442,14 +439,45 @@ export async function analyzeProductsAndClips(
       startPct: Math.round((range.start / totalDuration) * 100),
       widthPct: Math.max(2, Math.round(((range.end - range.start) / totalDuration) * 100)),
     });
-    clips.push(...productClips);
   }
+
+  // 立即推送产品分段就绪事件 (前端时间轴色带可瞬间点亮)
+  if (onEvent) {
+    onEvent('products_ready', {
+      products,
+      percent: 55,
+      label: `成功划分 ${products.length} 个产品区间，正在逐产品规划切片...`,
+    });
+  }
+
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    const productClips = await clipsForProduct(ctx, i, seg, sentences, totalDuration, jobId).catch((err) => {
+      console.warn(`产品 ${seg.productName} 切片分析失败:`, err);
+      return [] as HighlightClip[];
+    });
+
+    clips.push(...productClips);
+
+    // 关键点：每完成一个产品的切片，立即向前端流式吐出该批切片！
+    if (onEvent) {
+      const curPct = 55 + Math.round(((i + 1) / segs.length) * 40);
+      onEvent('clips_batch', {
+        productIndex: i,
+        productName: seg.productName,
+        clips: productClips,
+        percent: curPct,
+        label: `【${seg.productName}】切片规划就绪 (共 ${productClips.length} 条)...`,
+      });
+    }
+  }
+
   return { products, clips };
 }
 
 
 /**
- * 6. 执行全链路 ASR + Qwen 高光拆条完整工作流
+ * 6. 执行全链路 ASR + Qwen 高光拆条完整工作流 (支持渐进式流式事件推送)
  */
 export async function runFullASRWorkflow(
   ctx: Context,
@@ -458,22 +486,37 @@ export async function runFullASRWorkflow(
   fileName: string,
   videoUrl: string,
   onProgress: (step: number, label: string) => void = () => {},
-  jobId?: string
+  jobId?: string,
+  onEvent?: (event: string, payload: any) => void
 ): Promise<VideoAnalysisResult> {
   // Step 1: probe 视频时长和分辨率
   onProgress(0, '探测视频信息');
+  if (onEvent) {
+    onEvent('progress', { step: 0, label: '正在探测视频信息与分辨率...', percent: 5 });
+  }
   const { duration, width, height } = await probeVideo(videoPath);
 
   // Step 2: FFmpeg 提取音频
   onProgress(1, '提取音频');
+  if (onEvent) {
+    onEvent('progress', { step: 1, label: '正在通过 FFmpeg 提取 16kHz 单声道音频...', percent: 15 });
+  }
   const audioDir = path.resolve(path.dirname(videoPath), '../audios');
   const audioPath = path.resolve(audioDir, `${path.basename(videoPath, path.extname(videoPath))}.mp3`);
   await extractAudioFromVideo(videoPath, audioPath);
 
   // Step 3: 上传音频至阿里云 OSS
   onProgress(2, '上传音频');
+  if (onEvent) {
+    onEvent('progress', { step: 2, label: '正在上传音频至阿里云 OSS (签名鉴权)...', percent: 25 });
+  }
   const audioOssUrl = await uploadAudioToOSS(audioPath);
+
+  // Step 4: DashScope Paraformer 语音识别
   onProgress(3, '语音转文字');
+  if (onEvent) {
+    onEvent('progress', { step: 3, label: 'DashScope Paraformer 正在转写并生成句级时间戳...', percent: 35 });
+  }
   console.log(`音频已上传至 OSS: ${audioOssUrl}`);
   const transcripts = await transcribeWithParaformer(audioOssUrl);
   console.log(`Paraformer 语音识别完成，共识别出 ${transcripts.sentences.length} 句字幕`);
@@ -481,11 +524,26 @@ export async function runFullASRWorkflow(
     throw new Error('未识别到任何口播内容，无法按产品切片');
   }
 
-  onProgress(4, '识别产品并规划切片');
-  // Step 5: 两阶段分析 (走 DSH 微内核，自动记录 Trace)
-  const { products, clips } = await analyzeProductsAndClips(ctx, transcripts.sentences, duration, jobId);
+  // 关键点：ASR 识别一完成，立即流式推送字幕数据 (前端右侧台词和卡拉OK字幕可瞬间展示！)
+  if (onEvent) {
+    onEvent('asr_ready', {
+      transcripts,
+      percent: 45,
+      label: `语音识别完成 (共 ${transcripts.sentences.length} 句字幕)，正在进入 Qwen 产品语义分段...`,
+    });
+  }
 
-  return {
+  onProgress(4, '识别产品并规划切片');
+  // Step 5: 两阶段分析 (走 DSH 微内核，自动记录 Trace，并流式推送各个产品的切片)
+  const { products, clips } = await analyzeProductsAndClips(
+    ctx,
+    transcripts.sentences,
+    duration,
+    jobId,
+    onEvent
+  );
+
+  const finalResult: VideoAnalysisResult = {
     videoId,
     filename: fileName,
     videoUrl,
@@ -496,6 +554,16 @@ export async function runFullASRWorkflow(
     products,
     clips,
   };
+
+  if (onEvent) {
+    onEvent('complete', {
+      ...finalResult,
+      percent: 100,
+      label: `全链路切片完成！共规划 ${products.length} 个商品、${clips.length} 条切片`,
+    });
+  }
+
+  return finalResult;
 }
 
 /**
