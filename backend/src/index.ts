@@ -54,8 +54,9 @@ const GenerateSceneRequestSchema = z
   .object({
     baseImageUrl: z
       .string()
+      .optional()
       .openapi({
-        description: '产品原型图 URL 或 Base64 DataURL (或 2D 合成图)',
+        description: '产品原型图 URL 或 Base64 DataURL (可选，不传则为纯文生图)',
         example: 'https://dashscope.oss-cn-beijing.aliyuncs.com/samples/image/wanx/powerbank_white.png',
       }),
     logoImageUrl: z

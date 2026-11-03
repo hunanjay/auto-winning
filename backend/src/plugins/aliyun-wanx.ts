@@ -5,7 +5,7 @@ export interface AliyunWanxConfig {
 }
 
 export interface EcommerceSceneParams {
-  baseImageUrl: string;
+  baseImageUrl?: string;
   logoImageUrl?: string;
   craftPrompt?: string;
   prompt: string;
@@ -46,31 +46,34 @@ export class AliyunWanxService {
       throw new Error('DASHSCOPE_API_KEY 未配置，请在 .env.local 中配置阿里云百炼 API Key');
     }
 
-    const isDualImage = Boolean(logoImageUrl);
+    const isDualImage = Boolean(baseImageUrl && logoImageUrl);
+    const hasBaseImage = Boolean(baseImageUrl);
     this.ctx
       .logger('aliyun-wanx')
       .info(
-        `🎨 调用 qwen-image-3.0 (${isDualImage ? '双图: 产品原型图 + Logo' : '单图刀版'}) 生成商拍大图: prompt="${prompt}"`
+        `🎨 调用 qwen-image-3.0 (${isDualImage ? '双图融合' : hasBaseImage ? '参考图生图' : '纯文生图'}) 生成: prompt="${prompt}"`
       );
 
     const instruction = isDualImage
-      ? `图1是产品原型图，图2是企业品牌Logo图形。${
-          craftPrompt ||
-          '请将图2中的Logo精准、自然地印制在图1产品正面居中的醒目区域，采用金属激光镭雕工艺，使Logo顺应产品表面的3D立体透视、曲率与材质高光阴影'
-        }，且严格保持图1产品主体结构与图2 Logo图案文字不变形；同时将该定制好Logo的产品置于以下商业摄影场景中：${prompt}`
-      : `请严格保持参考图中的产品外观轮廓与表面定制Logo文字/图形100%不变形、不改字，将产品自然融合进以下商业摄影场景中，并为产品边缘添加真实的环境漫反射高光与底部接触阴影：${prompt}`;
+      ? `图1是商品原图，图2是参考图/Logo。请根据以下提示词将图1与图2自然融合并生成高质量商业摄影画面（严格保持商品结构与Logo特征不变形，画面不要生成多余促销文字水印）：${prompt}`
+      : hasBaseImage
+      ? `请严格保持参考图中的商品主体外观结构不变形，根据以下提示词生成高质量商业摄影画面（画面干净纯粹，不要生成多余促销文字水印）：${prompt}`
+      : `${prompt}，大师级商业摄影质感，真实光影，超高清细节`;
 
     const count = Math.min(Math.max(n, 1), 4);
     const generateSingle = async (variantIdx: number): Promise<string> => {
-      const shotRoles = [
-        '电商主图视角：首屏高转化商业棚拍主视觉，主体居中突出，高级柔光与真实接触阴影',
-        '详情页首屏海报图：生活化高奢场景构图，午后暖调侧逆光，预留自然视觉呼吸感与高级氛围',
-        '详情页材质细节图：近距离微距特写视角，重点展现产品表面材质肌理、边缘倒角与高光反光细节',
-        '辅图种草场景视角：多角度陈列构图，搭配极简美学道具，柔和漫反射光影',
+      const shotAngles = [
+        '主视觉棚拍视角，主体居中突出，柔和立体光影与真实接触阴影',
+        '微距侧逆光质感视角，柔和景深，突出产品表面材质纹理与高光细节',
+        '生活美学场景视角，自然晨光漫反射',
+        '高级极简几何展台视角，轮廓光勾勒立体质感',
       ];
-      const fullPrompt = `${instruction}（本张套图定位：${shotRoles[variantIdx % shotRoles.length]}）`;
+      const fullPrompt = count > 1 ? `${instruction}（镜头${variantIdx + 1}：${shotAngles[variantIdx % shotAngles.length]}）` : instruction;
 
-      const messageContent: Array<{ image?: string; text?: string }> = [{ image: baseImageUrl }];
+      const messageContent: Array<{ image?: string; text?: string }> = [];
+      if (baseImageUrl) {
+        messageContent.push({ image: baseImageUrl });
+      }
       if (logoImageUrl) {
         messageContent.push({ image: logoImageUrl });
       }
