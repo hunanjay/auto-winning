@@ -353,10 +353,10 @@ export default function ImageStudio({
   return (
     <div className="flex h-[calc(100vh-56px)] w-full bg-[#FAFAFC] overflow-hidden">
       {/* 左侧：极简控制栏 */}
-      <aside className="w-[320px] shrink-0 bg-white border-r border-slate-200/60 flex flex-col h-full">
+      <aside className="w-[350px] shrink-0 bg-white border-r border-slate-200/60 flex flex-col h-full">
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
           {/* 1. 参考图 */}
-          <section className="space-y-2.5">
+          <section className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-semibold text-slate-900 tracking-tight">
                 参考图
@@ -374,35 +374,52 @@ export default function ImageStudio({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 gap-3">
               {uploadedImages.map((img, idx) => (
                 <div
                   key={img.id}
-                  className="relative group aspect-square rounded-xl bg-slate-50/70 border border-slate-200/70 overflow-hidden"
+                  onClick={() =>
+                    setActiveDetailImage({
+                      id: img.id,
+                      customImageUrl: img.url,
+                      tag: idx === 0 ? '图1·商品' : `图${idx + 1}·Logo`,
+                      prompt: prompt || '参考图预览',
+                      ratio: '1:1',
+                      model: '参考原图'
+                    })
+                  }
+                  className="relative group aspect-square rounded-2xl bg-slate-50/70 border border-slate-200/80 hover:border-slate-300 overflow-hidden cursor-pointer transition"
                 >
                   <img
                     src={img.url}
                     alt={img.label}
-                    className="w-full h-full object-contain p-2"
+                    className="w-full h-full object-contain p-2.5 transition-transform duration-300 group-hover:scale-105"
                   />
-                  <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-white/90 backdrop-blur-xs text-slate-700 text-[10px] font-medium shadow-2xs">
-                    {idx === 0 ? '图1·商品' : `图${idx + 1}·Logo`}
+                  <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-xs text-slate-700 text-[11px] font-medium shadow-2xs">
+                    {idx === 0 ? '图1 · 商品' : `图${idx + 1} · Logo`}
                   </span>
                   <button
-                    onClick={() =>
-                      setUploadedImages((prev) => prev.filter((item) => item.id !== img.id))
-                    }
-                    className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-900/70 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUploadedImages((prev) => prev.filter((item) => item.id !== img.id));
+                    }}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition cursor-pointer"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ))}
 
-              {uploadedImages.length < 4 && (
-                <label className="aspect-square rounded-xl border border-dashed border-slate-200 hover:border-slate-400 bg-slate-50/40 hover:bg-slate-50 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-700 cursor-pointer transition">
-                  <Plus className="w-4 h-4" />
-                  <span className="text-[11px] font-medium">上传</span>
+              {uploadedImages.length < 2 && (
+                <label
+                  className={`${
+                    uploadedImages.length === 0 ? 'col-span-2 py-8' : 'aspect-square'
+                  } rounded-2xl border border-dashed border-slate-200 hover:border-slate-400 bg-slate-50/40 hover:bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-slate-700 cursor-pointer transition`}
+                >
+                  <Plus className="w-5 h-5" />
+                  <span className="text-xs font-medium">
+                    {uploadedImages.length === 0 ? '点击上传商品图或 Logo' : '添加 Logo / 参考图'}
+                  </span>
                   <input
                     type="file"
                     multiple
@@ -413,6 +430,20 @@ export default function ImageStudio({
                 </label>
               )}
             </div>
+
+            {uploadedImages.length >= 2 && uploadedImages.length < 4 && (
+              <label className="w-full py-2 rounded-xl border border-dashed border-slate-200 hover:border-slate-300 bg-slate-50/40 hover:bg-slate-50 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 cursor-pointer transition">
+                <Plus className="w-3.5 h-3.5" />
+                <span>继续添加参考图 ({uploadedImages.length}/4)</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </label>
+            )}
           </section>
 
           {/* 2. 画面描述 */}
