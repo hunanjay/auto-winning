@@ -187,12 +187,9 @@ export default function ImageStudio({
   const [batches, setBatches] = useState(IMAGE_FEED);
   const [activeDetailImage, setActiveDetailImage] = useState(null);
 
+  // 默认参考图为空，用户可点击上传或点击右侧示例填入
   useEffect(() => {
-    setUploadedImages([
-      { id: 'init-1', url: createSamplePng('powerbank'), label: '商品' },
-      { id: 'init-2', url: createSamplePng('logo_nexus'), label: 'Logo' }
-    ]);
-    setPrompt(QUICK_EXAMPLES[0].prompt);
+    // 保持默认为空
   }, []);
 
   useEffect(() => {
@@ -413,13 +410,22 @@ export default function ImageStudio({
               {uploadedImages.length < 2 && (
                 <label
                   className={`${
-                    uploadedImages.length === 0 ? 'col-span-2 py-8' : 'aspect-square'
-                  } rounded-2xl border border-dashed border-slate-200 hover:border-slate-400 bg-slate-50/40 hover:bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-slate-700 cursor-pointer transition`}
+                    uploadedImages.length === 0 ? 'col-span-2 py-9' : 'aspect-square'
+                  } rounded-2xl border border-dashed border-slate-200 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-slate-700 cursor-pointer transition`}
                 >
-                  <Plus className="w-5 h-5" />
-                  <span className="text-xs font-medium">
-                    {uploadedImages.length === 0 ? '点击上传商品图或 Logo' : '添加 Logo / 参考图'}
-                  </span>
+                  <div className="w-8 h-8 rounded-full bg-white border border-slate-200/80 flex items-center justify-center text-slate-500 shadow-2xs">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <div className="text-center">
+                    <span className="text-xs font-medium text-slate-700 block">
+                      {uploadedImages.length === 0 ? '点击上传商品图或 Logo' : '添加 Logo / 参考图'}
+                    </span>
+                    {uploadedImages.length === 0 && (
+                      <span className="text-[11px] text-slate-400 mt-0.5 block">
+                        支持 0~4 张，不传图则为纯文生图
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="file"
                     multiple
