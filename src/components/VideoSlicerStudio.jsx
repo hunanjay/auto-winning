@@ -761,9 +761,9 @@ export default function VideoSlicerStudio({ onAddToast }) {
 
             {/* 独立放置在视频窗口正下方的时间戳与时空热度时序控制条 */}
             <div className="flex flex-col gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-900 text-white shadow-xs">
-              {/* 多产品时空热度分段时序轨 (嵌入时间戳进度条中，纯净无文字title，随视频播放指示进度) */}
+              {/* 多产品时空热度分段时序轨 (嵌入时间戳进度条中，纯净无亮块，上方以利落倒三角箭头指示当前位置) */}
               <div
-                className="relative h-2.5 w-full bg-neutral-800 rounded-full overflow-hidden cursor-pointer transition-all hover:h-3.5 group/timeline"
+                className="relative pt-2 pb-0.5 w-full cursor-pointer group/timeline select-none"
                 onClick={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -773,58 +773,46 @@ export default function VideoSlicerStudio({ onAddToast }) {
                     setCurrentTime(target);
                   }
                 }}
-                title="时空热度分布时序轨：点击跳转播放"
+                title="时空热度时序轨：点击跳转播放"
               >
-                {/* 轨 1: 产品分段色带 (纯净色块无标题，hover展示对应单品) */}
-                {products.length === 0 ? (
-                  <div className="absolute inset-0 bg-neutral-700/60" />
-                ) : (
-                  products.map((p) => (
-                    <div
-                      key={p.index}
-                      className="absolute top-0 bottom-0 transition-opacity hover:brightness-125"
-                      style={{
-                        left: `${p.startPct}%`,
-                        width: `${p.widthPct}%`,
-                        backgroundColor: colorOf(p.index),
-                        opacity: productFilter < 0 || productFilter === p.index ? 0.85 : 0.25
-                      }}
-                      title={`单品：${p.name} (${p.sellingPoints || '热卖中'})`}
-                    />
-                  ))
-                )}
-
-                {/* 轨 2: 细分环节高光切片指示色块 (半透明浮动层，hover展示切片高光详情) */}
-                {visibleClips.map((clip) => {
-                  const isSelected = activeClip?.id === clip.id;
-                  return (
-                    <div
-                      key={clip.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCardClick(clip);
-                      }}
-                      className={`absolute top-0 bottom-0 rounded-xs transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-white z-10 shadow-xs ring-1 ring-white'
-                          : 'bg-white/40 hover:bg-white/80 hover:z-10'
-                      }`}
-                      style={{
-                        left: `${clip.startPct}%`,
-                        width: `${clip.widthPct}%`
-                      }}
-                      title={`高光「${clip.tag}」: ${clip.productName || ''} (${clip.timeRange})`}
-                    />
-                  );
-                })}
-
-                {/* 播放进度指针 (Playhead 白线，平滑随视频流动) */}
+                {/* 倒三角箭头指示器 ▼ (直观指示当前播放/切片位置) */}
                 <div
-                  className="absolute top-0 bottom-0 bg-white w-1 -ml-0.5 z-20 pointer-events-none shadow-sm"
+                  className="absolute top-0 -ml-[5px] z-30 pointer-events-none transition-all duration-75 flex flex-col items-center"
                   style={{
                     left: `${videoData.duration ? (currentTime / videoData.duration) * 100 : 0}%`
                   }}
-                />
+                >
+                  <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-white drop-shadow-md" />
+                </div>
+
+                {/* 纯净多产品分段色带 (无任何亮块遮挡，纯净通透) */}
+                <div className="relative h-2.5 w-full bg-neutral-800 rounded-full overflow-hidden">
+                  {products.length === 0 ? (
+                    <div className="absolute inset-0 bg-neutral-700/60" />
+                  ) : (
+                    products.map((p) => (
+                      <div
+                        key={p.index}
+                        className="absolute top-0 bottom-0 transition-opacity hover:brightness-125"
+                        style={{
+                          left: `${p.startPct}%`,
+                          width: `${p.widthPct}%`,
+                          backgroundColor: colorOf(p.index),
+                          opacity: productFilter < 0 || productFilter === p.index ? 0.9 : 0.3
+                        }}
+                        title={`单品：${p.name} (${p.sellingPoints || '热卖中'})`}
+                      />
+                    ))
+                  )}
+
+                  {/* 垂直白细游标贯穿色带内部 */}
+                  <div
+                    className="absolute top-0 bottom-0 bg-white w-[1.5px] -ml-[0.75px] z-20 pointer-events-none"
+                    style={{
+                      left: `${videoData.duration ? (currentTime / videoData.duration) * 100 : 0}%`
+                    }}
+                  />
+                </div>
               </div>
 
               {/* 控制按钮与时间戳详细信息 */}
