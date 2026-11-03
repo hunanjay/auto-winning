@@ -257,9 +257,12 @@ app.post('/api/chat', async (c) => {
 
 // (0) 静态视频流媒体分发 (支持 HTTP Range 断点续播与快速 Seek)
 app.get('/uploads/*', async (c) => {
-  const reqSubPath = c.req.path.replace(/^\/uploads\//, '');
+  const reqSubPath = decodeURIComponent(c.req.path.replace(/^\/uploads\//, ''));
   const filePath = path.resolve(__dirname, '../uploads', reqSubPath);
 
+  if (!filePath.startsWith(path.resolve(__dirname, '../uploads') + path.sep)) {
+    return c.text('非法路径', 403);
+  }
   if (!fs.existsSync(filePath)) {
     return c.text('视频文件未找到', 404);
   }
@@ -351,7 +354,9 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
 
     if (!isUpload && fs.existsSync(cachePath)) {
       try {
-        analysisResult = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+        const cached = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+        // 旧版缓存 (无产品分段) 视为失效
+        if (cached.products) analysisResult = cached;
       } catch {
         // 缓存失效则重新执行
       }
@@ -390,6 +395,7 @@ app.post('/api/slicer/upload-and-analyze', async (c) => {
           ratio: `${analysisResult.width}:${analysisResult.height}`,
         },
         transcripts: analysisResult.transcripts,
+        products: analysisResult.products || [],
         clips: analysisResult.clips,
       },
     });
@@ -434,7 +440,7 @@ app.post('/api/slicer/cut-clip', async (c) => {
       data: {
         clipId,
         title: clipTitle,
-        downloadUrl: `http://localhost:${port}/uploads/clips/${outputFileName}`,
+        downloadUrl: `http://localhost:${port}/uploads/clips/${encodeURIComponent(outputFileName)}`,
         sizeBytes: result.sizeBytes,
         duration: result.duration,
       },
@@ -472,7 +478,7 @@ app.post('/api/slicer/cut-all', async (c) => {
       results.push({
         id: clip.id,
         title: clip.title,
-        downloadUrl: `http://localhost:${port}/uploads/clips/${outputFileName}`,
+        downloadUrl: `http://localhost:${port}/uploads/clips/${encodeURIComponent(outputFileName)}`,
       });
     }
 

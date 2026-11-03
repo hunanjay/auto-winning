@@ -37,6 +37,19 @@ export interface HighlightClip {
   tag: string;
   caption: string;
   transcriptSnippet: string;
+  productName: string;
+  productIndex: number;
+  stage: string;
+}
+
+export interface ProductSegment {
+  index: number;
+  name: string;
+  sellingPoints: string;
+  startSeconds: number;
+  endSeconds: number;
+  startPct: number;
+  widthPct: number;
 }
 
 export interface VideoAnalysisResult {
@@ -50,6 +63,7 @@ export interface VideoAnalysisResult {
     fullText: string;
     sentences: SentenceItem[];
   };
+  products: ProductSegment[];
   clips: HighlightClip[];
 }
 
@@ -178,10 +192,10 @@ export async function transcribeWithParaformer(audioUrl: string): Promise<{ full
     throw new Error(`提交 Paraformer 转写任务失败: ${JSON.stringify(submitJson)}`);
   }
 
-  // 4.2 轮询任务状态直至完成 (最长等待 30 秒)
-  const maxAttempts = 15;
+  // 4.2 轮询任务状态直至完成 (长直播最长等待约 10 分钟)
+  const maxAttempts = 200;
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     const pollRes = await fetch(`https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`, {
       headers: {
@@ -226,189 +240,206 @@ export async function transcribeWithParaformer(audioUrl: string): Promise<{ full
   throw new Error('Paraformer 转写轮询超时');
 }
 
+const STAGES = ['开场引入', '卖点讲解', '效果演示', '价格逼单'] as const;
+
+const fmtTime = (s: number) => {
+  const m = Math.floor(s / 60).toString().padStart(2, '0');
+  const sec = Math.floor(s % 60).toString().padStart(2, '0');
+  return `${m}:${sec}`;
+};
+
+async function callQwenJSON(systemPrompt: string, userPrompt: string): Promise<any> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await callQwenJSONOnce(
+        systemPrompt + '\n注意：JSON 字符串值内部不得出现英文双引号，需要引用请用中文引号“”。',
+        userPrompt
+      );
+    } catch (err) {
+      lastErr = err;
+      console.warn(`Qwen JSON 解析失败，重试 ${attempt + 1}/3`);
+    }
+  }
+  throw lastErr;
+}
+
+async function callQwenJSONOnce(systemPrompt: string, userPrompt: string): Promise<any> {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const baseUrl = process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: process.env.DEFAULT_MODEL || 'qwen3.6-flash',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.1,
+    }),
+  });
+  const completion: any = await response.json();
+  const content: string = completion.choices?.[0]?.message?.content || '';
+  const match = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (!match) throw new Error(`Qwen 未返回标准 JSON: ${content.slice(0, 300)}`);
+  return JSON.parse(match[0]);
+}
+
 /**
- * 5. 调用 Qwen 大模型基于带时间戳的字幕文本分析提炼爆款带货高光切片
+ * 将任意时间 (秒) 吸附到句子边界，避免切断半句话
  */
-export async function analyzeHighlightsWithQwen(
+function snapToSentences(
+  sentences: SentenceItem[],
+  start: number,
+  end: number
+): { start: number; end: number } {
+  const startMs = start * 1000;
+  const endMs = end * 1000;
+  const first = sentences.find((s) => s.end_time > startMs) || sentences[0];
+  const lastCandidates = sentences.filter((s) => s.begin_time < endMs);
+  const last = lastCandidates[lastCandidates.length - 1] || sentences[sentences.length - 1];
+  return {
+    start: Math.max(0, Math.floor(first.begin_time / 1000)),
+    end: Math.ceil(last.end_time / 1000),
+  };
+}
+
+function formatSentences(sentences: SentenceItem[]): string {
+  return sentences
+    .map((s, i) => `#${i} [${(s.begin_time / 1000).toFixed(1)}s-${(s.end_time / 1000).toFixed(1)}s] ${s.text}`)
+    .join('\n');
+}
+
+/**
+ * 阶段 1：产品分段。识别整场直播中依次讲解的各个产品及其起止句子编号
+ */
+export async function segmentProducts(
+  sentences: SentenceItem[]
+): Promise<{ productName: string; sellingPoints: string; startIdx: number; endIdx: number }[]> {
+  const systemPrompt = `你是直播带货内容分析师。输入是一场直播的带时间戳逐句口播 (每句有 #编号)。
+任务：识别主播依次讲解了哪几个不同的产品，并给出每个产品对应的起止句子编号。
+规则：
+1. 只按"产品"划分，同一产品的开场、讲解、演示、逼单都属于同一段；
+2. 以下情况视为产品切换：出现新的产品名/品类、"下一款/接下来/再来看/上链接"后讲新东西、话题明显转换；
+3. 开场寒暄、福利预告、与具体产品无关的闲聊，不单独成为产品，并入相邻产品段或忽略；
+4. 各产品段按时间顺序排列，句子编号不重叠，startIdx<=endIdx；
+5. 若整场只有一个产品，就只输出一段；
+6. 只输出 JSON 数组，不要任何解释。
+格式：[{"productName":"产品名","sellingPoints":"一句话核心卖点","startIdx":0,"endIdx":12}]`;
+
+  const result = await callQwenJSON(systemPrompt, formatSentences(sentences));
+  const maxIdx = sentences.length - 1;
+  const segs = (result as any[])
+    .map((r) => ({
+      productName: String(r.productName || '未命名产品'),
+      sellingPoints: String(r.sellingPoints || ''),
+      startIdx: Math.max(0, Math.min(maxIdx, Number(r.startIdx))),
+      endIdx: Math.max(0, Math.min(maxIdx, Number(r.endIdx))),
+    }))
+    .filter((r) => Number.isFinite(r.startIdx) && Number.isFinite(r.endIdx) && r.startIdx <= r.endIdx)
+    .sort((a, b) => a.startIdx - b.startIdx);
+
+  if (!segs.length) throw new Error('产品分段结果为空');
+  return segs;
+}
+
+/**
+ * 阶段 2：在单个产品段内，按带货环节各切出一条切片
+ */
+async function clipsForProduct(
+  productIndex: number,
+  seg: { productName: string; sellingPoints: string; startIdx: number; endIdx: number },
   sentences: SentenceItem[],
   totalDuration: number
 ): Promise<HighlightClip[]> {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
-  const baseUrl = process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  const sub = sentences.slice(seg.startIdx, seg.endIdx + 1);
+  if (!sub.length) return [];
 
-  // 组装格式化字幕文本给大模型
-  const subtitleContext = sentences
-    .map((s) => `[${(s.begin_time / 1000).toFixed(1)}s - ${(s.end_time / 1000).toFixed(1)}s] ${s.text}`)
-    .join('\n');
+  const systemPrompt = `你是电商短视频剪辑总监。输入是某一个产品的带时间戳口播 (每句有 #编号)。
+请在这个产品范围内，按带货环节切出切片，供后期自由组合。环节固定为：
+- 开场引入：引出产品、吸引注意
+- 卖点讲解：成分/功能/参数/优势
+- 效果演示：试用、对比、实测、展示
+- 价格逼单：价格锚点、福利赠品、限时限量、催促下单
+规则：
+1. 每个环节最多一条；该产品里确实没有对应内容的环节就不要输出，不得编造；
+2. 切片必须由连续的完整句子组成，用 startIdx/endIdx (句子编号，含) 表示；
+3. 单条建议 8~40 秒，不要超出本产品编号范围；
+4. score 为 80~99 的转化潜力分；hook 为该片段最有杀伤力的一句原话 (必须来自口播原文)；
+5. 只输出 JSON 数组。
+格式：[{"stage":"开场引入","startIdx":0,"endIdx":2,"score":90,"hook":"原话","summary":"一句话描述"}]`;
 
-  const systemPrompt = `你是一位千万级带货直播间操盘手和短视频矩阵剪辑总监。
-你的任务是根据带时间戳的直播口播字幕，分析挖掘出 3~4 个具有极高点赞率、完播率和电商转化率的黄金切片。
+  const local = sub.map((s, i) => `#${i} [${(s.begin_time / 1000).toFixed(1)}s-${(s.end_time / 1000).toFixed(1)}s] ${s.text}`).join('\n');
+  const raw = (await callQwenJSON(systemPrompt, `产品：${seg.productName}\n核心卖点：${seg.sellingPoints}\n\n${local}`)) as any[];
 
-每个切片需满足：
-1. 紧贴真实口播台词起止时间 (秒数)，单段时长建议 10~25 秒；
-2. 识别不同带货维度，标签可选：价格锚点峰值、特写高光帧、痛点场景、加购波峰；
-3. 输出带货转化预测分值 (88~99)；
-4. 提炼出该切片中最具杀伤力、能作为前3秒文案气泡的金句钩子 (caption)；
-5. 输出严格的 JSON 数组格式，不要输出任何 markdown 格式化字符以外的多余解释。
+  const seen = new Set<string>();
+  const clips: HighlightClip[] = [];
+  for (const c of raw) {
+    const stage = String(c.stage || '');
+    if (!(STAGES as readonly string[]).includes(stage) || seen.has(stage)) continue;
+    const a = Math.max(0, Math.min(sub.length - 1, Number(c.startIdx)));
+    const b = Math.max(0, Math.min(sub.length - 1, Number(c.endIdx)));
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a > b) continue;
+    seen.add(stage);
 
-输出格式示例：
-[
-  {
-    "title": "黄金破价锚点片段",
-    "startSeconds": 4,
-    "endSeconds": 20,
-    "tag": "价格锚点峰值",
-    "score": 98,
-    "caption": "“平时二百九十九，今天直播间直接破价九十九送正装！”",
-    "transcriptSnippet": "今天直播间直接破价只要九十九，并且买正装多送一份正装体验装..."
-  }
-]`;
-
-  const userPrompt = `视频总时长: ${totalDuration} 秒。
-以下是带精确秒数时间戳的语音识别口播字幕：
-${subtitleContext}
-
-请依据电商高光转化逻辑输出最优的切片规划 JSON 数组。`;
-
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'qwen3.6-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.2,
-      }),
+    // 严格落在产品边界内，并按句子边界对齐
+    const start = Math.max(0, Math.floor(sub[a].begin_time / 1000));
+    const end = Math.min(totalDuration, Math.ceil(sub[b].end_time / 1000));
+    const dur = Math.max(1, end - start);
+    clips.push({
+      id: `p${productIndex + 1}-${stage}-${start}`,
+      title: `${seg.productName} · ${stage}`,
+      productName: seg.productName,
+      productIndex,
+      stage,
+      startSeconds: start,
+      endSeconds: end,
+      durationSeconds: dur,
+      timeRange: `${fmtTime(start)} - ${fmtTime(end)}`,
+      score: Math.max(80, Math.min(99, Number(c.score) || 90)),
+      startPct: Math.round((start / totalDuration) * 100),
+      widthPct: Math.max(2, Math.round((dur / totalDuration) * 100)),
+      tag: stage,
+      caption: String(c.hook || c.summary || ''),
+      transcriptSnippet: sub.slice(a, b + 1).map((s) => s.text).join(''),
     });
-
-    const completion = await response.json();
-    const content = completion.choices?.[0]?.message?.content || '';
-
-    // 解析 JSON
-    const jsonMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
-    if (!jsonMatch) {
-      throw new Error(`Qwen 未返回标准 JSON: ${content}`);
-    }
-
-    const parsedClips = JSON.parse(jsonMatch[0]);
-
-    return parsedClips.map((c: any, index: number) => {
-      const start = Math.max(0, Math.floor(c.startSeconds || 0));
-      const end = Math.min(totalDuration, Math.ceil(c.endSeconds || start + 15));
-      const dur = Math.max(1, end - start);
-
-      const fmt = (s: number) => {
-        const m = Math.floor(s / 60).toString().padStart(2, '0');
-        const sec = Math.floor(s % 60).toString().padStart(2, '0');
-        return `${m}:${sec}`;
-      };
-
-      return {
-        id: `asr-clip-${Date.now()}-${index + 1}`,
-        title: c.title || `高光片段 ${index + 1}`,
-        startSeconds: start,
-        endSeconds: end,
-        durationSeconds: dur,
-        timeRange: `${fmt(start)} - ${fmt(end)}`,
-        score: c.score || 95,
-        startPct: Math.round((start / totalDuration) * 100),
-        widthPct: Math.max(5, Math.round((dur / totalDuration) * 100)),
-        tag: c.tag || '高光切片',
-        caption: c.caption || '“爆款精选带货高光”',
-        transcriptSnippet: c.transcriptSnippet || '',
-      };
-    });
-  } catch (err) {
-    console.warn('Qwen 高光分析警告, 降级使用规则切片:', err);
-    return getFallbackClips(totalDuration);
   }
+  return clips;
 }
 
 /**
- * 降级保底规划 (若无字幕或解析异常时触发)
+ * 两阶段高光分析：先按产品分段，再逐产品按带货环节切片
  */
-function getFallbackClips(totalDuration: number): HighlightClip[] {
-  const dur = Math.max(30, totalDuration);
-  const p1_start = Math.round(dur * 0.05);
-  const p1_end = Math.round(dur * 0.32);
-  const p2_start = Math.round(dur * 0.35);
-  const p2_end = Math.round(dur * 0.60);
-  const p3_start = Math.round(dur * 0.62);
-  const p3_end = Math.round(dur * 0.85);
-  const p4_start = Math.round(dur * 0.82);
-  const p4_end = dur;
+export async function analyzeProductsAndClips(
+  sentences: SentenceItem[],
+  totalDuration: number
+): Promise<{ products: ProductSegment[]; clips: HighlightClip[] }> {
+  const segs = await segmentProducts(sentences);
+  const products: ProductSegment[] = [];
+  const clips: HighlightClip[] = [];
 
-  const fmt = (s: number) => {
-    const m = Math.floor(s / 60).toString().padStart(2, '0');
-    const sec = Math.floor(s % 60).toString().padStart(2, '0');
-    return `${m}:${sec}`;
-  };
-
-  return [
-    {
-      id: 'clip-fallback-1',
-      title: '黄金破价锚点片段',
-      startSeconds: p1_start,
-      endSeconds: p1_end,
-      durationSeconds: p1_end - p1_start,
-      timeRange: `${fmt(p1_start)} - ${fmt(p1_end)}`,
-      score: 98,
-      startPct: Math.round((p1_start / dur) * 100),
-      widthPct: Math.round(((p1_end - p1_start) / dur) * 100),
-      tag: '价格锚点峰值',
-      caption: '“今天买正装直接多送同款体验装，不满意包退！”',
-      transcriptSnippet: '第一重福利，平时一瓶要二百九十九，今天直播间直接破价只要九十九...',
-    },
-    {
-      id: 'clip-fallback-2',
-      title: '实测对比与特写帧',
-      startSeconds: p2_start,
-      endSeconds: p2_end,
-      durationSeconds: p2_end - p2_start,
-      timeRange: `${fmt(p2_start)} - ${fmt(p2_end)}`,
-      score: 95,
-      startPct: Math.round((p2_start / dur) * 100),
-      widthPct: Math.round(((p2_end - p2_start) / dur) * 100),
-      tag: '特写高光帧',
-      caption: '“仔细看微距镜头，质感和边缘处理真的是顶奢品质！”',
-      transcriptSnippet: '大家仔细看镜头前的微距特写，这个细腻的质感和边缘处理...',
-    },
-    {
-      id: 'clip-fallback-3',
-      title: '痛点共鸣与场景代入',
-      startSeconds: p3_start,
-      endSeconds: p3_end,
-      durationSeconds: p3_end - p3_start,
-      timeRange: `${fmt(p3_start)} - ${fmt(p3_end)}`,
-      score: 93,
-      startPct: Math.round((p3_start / dur) * 100),
-      widthPct: Math.round(((p3_end - p3_start) / dur) * 100),
-      tag: '痛点场景',
-      caption: '“经常熬夜加班脸色暗沉的姐妹，用它一抹提亮三分钟出门！”',
-      transcriptSnippet: '很多姐妹经常熬夜加班脸色暗沉，用它一抹提亮...',
-    },
-    {
-      id: 'clip-fallback-4',
-      title: '加购冲动与收尾促单',
-      startSeconds: p4_start,
-      endSeconds: p4_end,
-      durationSeconds: p4_end - p4_start,
-      timeRange: `${fmt(p4_start)} - ${fmt(p4_end)}`,
-      score: 96,
-      startPct: Math.round((p4_start / dur) * 100),
-      widthPct: Math.round(((p4_end - p4_start) / dur) * 100),
-      tag: '加购波峰',
-      caption: '“前100名加赠限量伴手礼盒，三二一直接上链接，赶紧加购！”',
-      transcriptSnippet: '前一百名加购下单的宝子，我们再加赠一份精美伴手礼盒...',
-    },
-  ];
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    const range = snapToSentences(sentences, sentences[seg.startIdx].begin_time / 1000, sentences[seg.endIdx].end_time / 1000);
+    const productClips = await clipsForProduct(i, seg, sentences, totalDuration).catch((err) => {
+      console.warn(`产品 ${seg.productName} 切片分析失败:`, err);
+      return [] as HighlightClip[];
+    });
+    products.push({
+      index: i,
+      name: seg.productName,
+      sellingPoints: seg.sellingPoints,
+      startSeconds: range.start,
+      endSeconds: range.end,
+      startPct: Math.round((range.start / totalDuration) * 100),
+      widthPct: Math.max(2, Math.round(((range.end - range.start) / totalDuration) * 100)),
+    });
+    clips.push(...productClips);
+  }
+  return { products, clips };
 }
+
 
 /**
  * 6. 执行全链路 ASR + Qwen 高光拆条完整工作流
@@ -428,39 +459,16 @@ export async function runFullASRWorkflow(
   await extractAudioFromVideo(videoPath, audioPath);
 
   // Step 3: 上传音频至阿里云 OSS
-  let transcripts: { fullText: string; sentences: SentenceItem[] } = {
-    fullText: '',
-    sentences: [],
-  };
-
-  try {
-    const audioOssUrl = await uploadAudioToOSS(audioPath);
-    console.log(`音频已上传至 OSS: ${audioOssUrl}`);
-
-    // Step 4: DashScope Paraformer 转写
-    transcripts = await transcribeWithParaformer(audioOssUrl);
-    console.log(`Paraformer 语音识别完成，共识别出 ${transcripts.sentences.length} 句字幕`);
-  } catch (asrErr) {
-    console.warn('ASR 转写异常, 使用预置带货口播台词保底:', asrErr);
-    transcripts = {
-      fullText: '欢迎来到团团直播间！今天大家有福了，给家人们带来的是我们的镇店爆款。第一重福利，平时一瓶要二百九十九，今天直播间直接破价只要九十九，并且买正装多送一份正装体验装，拆开用不满意包退。大家仔细看镜头前的微距特写，这个细腻的质感和边缘处理，真的是顶奢品质。很多姐妹经常熬夜加班脸色暗沉，用它一抹提亮，三分钟就能清爽出门。现在直播间还有最后十秒钟大促倒计时，前一百名加购下单的宝子，我们再加赠一份精美伴手礼盒，手慢无，三二一直接上链接，赶紧加购！',
-      sentences: [
-        { begin_time: 0, end_time: 5500, text: '欢迎来到团团直播间！今天大家有福了，给家人们带来的是我们的镇店爆款。' },
-        { begin_time: 5600, end_time: 19800, text: '第一重福利，平时一瓶要二百九十九，今天直播间直接破价只要九十九，并且买正装多送一份正装体验装，拆开用不满意包退。' },
-        { begin_time: 20000, end_time: 32000, text: '大家仔细看镜头前的微距特写，这个细腻的质感和边缘处理，真的是顶奢品质。' },
-        { begin_time: 32200, end_time: 41000, text: '很多姐妹经常熬夜加班脸色暗沉，用它一抹提亮，三分钟就能清爽出门。' },
-        { begin_time: 41200, end_time: 50600, text: '现在直播间还有最后十秒钟大促倒计时，前一百名加购下单的宝子，我们再加赠一份精美伴手礼盒，手慢无，三二一直接上链接，赶紧加购！' },
-      ],
-    };
+  const audioOssUrl = await uploadAudioToOSS(audioPath);
+  console.log(`音频已上传至 OSS: ${audioOssUrl}`);
+  const transcripts = await transcribeWithParaformer(audioOssUrl);
+  console.log(`Paraformer 语音识别完成，共识别出 ${transcripts.sentences.length} 句字幕`);
+  if (!transcripts.sentences.length) {
+    throw new Error('未识别到任何口播内容，无法按产品切片');
   }
 
-  // Step 5: 调用 Qwen 大模型识别高光切片
-  let clips: HighlightClip[] = [];
-  if (transcripts.sentences.length > 0) {
-    clips = await analyzeHighlightsWithQwen(transcripts.sentences, duration);
-  } else {
-    clips = getFallbackClips(duration);
-  }
+  // Step 5: 两阶段分析 (产品分段 -> 逐产品按环节切片)
+  const { products, clips } = await analyzeProductsAndClips(transcripts.sentences, duration);
 
   return {
     videoId,
@@ -470,6 +478,7 @@ export async function runFullASRWorkflow(
     width,
     height,
     transcripts,
+    products,
     clips,
   };
 }

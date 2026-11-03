@@ -87,6 +87,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
     }
   ]);
 
+  const [products, setProducts] = useState([]);
+  const [productFilter, setProductFilter] = useState(-1); // -1 = 全部产品
   const [activeClip, setActiveClip] = useState(clips[0]);
   const [activeTab, setActiveTab] = useState('clips'); // 'clips' | 'transcripts'
   const [activeRules, setActiveRules] = useState(['语音破价锚点', '微距特写帧', '加购波峰']);
@@ -115,6 +117,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
           if (res.data.transcripts) {
             setTranscripts(res.data.transcripts);
           }
+          setProducts(res.data.products || []);
+          setProductFilter(-1);
           if (res.data.clips?.length) {
             setClips(res.data.clips);
             setActiveClip(res.data.clips[0]);
@@ -206,6 +210,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
         if (json.data.transcripts) {
           setTranscripts(json.data.transcripts);
         }
+        setProducts(json.data.products || []);
+        setProductFilter(-1);
         if (json.data.clips?.length) {
           setClips(json.data.clips);
           setActiveClip(json.data.clips[0]);
@@ -278,7 +284,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoId: videoData.id,
-          clips
+          clips: visibleClips
         })
       });
 
@@ -314,6 +320,10 @@ export default function VideoSlicerStudio({ onAddToast }) {
       setIsCutting(false);
     }
   };
+
+  const PALETTE = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#65a30d'];
+  const colorOf = (i) => PALETTE[(i ?? 0) % PALETTE.length];
+  const visibleClips = productFilter < 0 ? clips : clips.filter((c) => c.productIndex === productFilter);
 
   const toggleRule = (rule) => {
     setActiveRules((prev) =>
@@ -400,7 +410,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-neutral-900 hover:bg-black text-white text-xs font-medium transition-all shadow-sm active:scale-95 disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{isCutting ? '正在物理裁剪...' : `一键物理导出全部 ${clips.length} 条切片`}</span>
+            <span>{isCutting ? '正在物理裁剪...' : `一键导出${productFilter >= 0 ? '该产品' : '全部'} ${visibleClips.length} 条切片`}</span>
           </button>
         </div>
       </header>
@@ -496,6 +506,28 @@ export default function VideoSlicerStudio({ onAddToast }) {
               </span>
             </div>
 
+            {/* 产品分段色带 */}
+            {products.length > 0 && (
+              <div className="relative h-6 mb-2 bg-neutral-50 rounded-md overflow-hidden border border-neutral-200">
+                {products.map((p) => (
+                  <button
+                    key={p.index}
+                    onClick={() => setProductFilter(productFilter === p.index ? -1 : p.index)}
+                    className="absolute top-0 bottom-0 text-[11px] text-white font-medium truncate px-2 text-left"
+                    style={{
+                      left: `${p.startPct}%`,
+                      width: `${p.widthPct}%`,
+                      background: colorOf(p.index),
+                      opacity: productFilter < 0 || productFilter === p.index ? 1 : 0.3
+                    }}
+                    title={`${p.name}: ${p.sellingPoints}`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* 时间轴标尺与切片区间 */}
             <div className="relative h-10 bg-neutral-100 rounded-lg overflow-hidden border border-neutral-200 flex items-center">
               {/* 播放头游标 */}
@@ -507,7 +539,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
               />
 
               {/* 切片区间色块 */}
-              {clips.map((clip) => {
+              {visibleClips.map((clip) => {
                 const isActive = activeClip?.id === clip.id;
                 return (
                   <button
@@ -571,11 +603,41 @@ export default function VideoSlicerStudio({ onAddToast }) {
           {/* Tab 1: 智能高光切片列表 */}
           {activeTab === 'clips' && (
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {clips.map((clip) => {
+              {products.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pb-1">
+                  <button
+                    onClick={() => setProductFilter(-1)}
+                    className={`px-2.5 py-1 rounded-full text-xs ${productFilter < 0 ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600'}`}
+                  >
+                    全部产品 ({products.length})
+                  </button>
+                  {products.map((p) => (
+                    <button
+                      key={p.index}
+                      onClick={() => setProductFilter(p.index)}
+                      className="px-2.5 py-1 rounded-full text-xs text-white"
+                      style={{ background: colorOf(p.index), opacity: productFilter === p.index || productFilter < 0 ? 1 : 0.4 }}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {visibleClips.map((clip, ci) => {
+                const showHeader = clip.productName && (ci === 0 || visibleClips[ci - 1].productIndex !== clip.productIndex);
                 const isSelected = activeClip?.id === clip.id;
                 return (
+                  <React.Fragment key={clip.id}>
+                  {showHeader && (
+                    <div className="flex items-center gap-2 pt-2 text-xs font-semibold text-neutral-800">
+                      <span className="w-2 h-2 rounded-full" style={{ background: colorOf(clip.productIndex) }} />
+                      {clip.productName}
+                      <span className="font-normal text-neutral-400">
+                        {products.find((p) => p.index === clip.productIndex)?.sellingPoints}
+                      </span>
+                    </div>
+                  )}
                   <div
-                    key={clip.id}
                     onClick={() => handleSelectClip(clip)}
                     className={`p-4 rounded-xl border cursor-pointer transition-all ${
                       isSelected
@@ -633,6 +695,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
                       </button>
                     </div>
                   </div>
+                  </React.Fragment>
                 );
               })}
             </div>
