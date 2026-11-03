@@ -16,12 +16,8 @@ import {
   Loader2,
   FolderOpen,
   Trash2,
-  Terminal,
-  X,
   ChevronRight,
   ChevronDown,
-  Copy,
-  RotateCcw,
   FileText,
   Layers,
   Film,
@@ -77,9 +73,6 @@ export default function VideoSlicerStudio({ onAddToast }) {
   // 抽屉与外部状态
   const [cases, setCases] = useState([]);
   const [casesOpen, setCasesOpen] = useState(false);
-  const [traces, setTraces] = useState([]);
-  const [tracesOpen, setTracesOpen] = useState(false);
-  const [expandedTraceId, setExpandedTraceId] = useState(null);
   const [serverStatus, setServerStatus] = useState({
     status: 'connected',
     serverUrl: 'http://127.0.0.1:8085',
@@ -127,7 +120,6 @@ export default function VideoSlicerStudio({ onAddToast }) {
       })
       .catch(() => {});
 
-    loadTraces();
 
     fetch('http://localhost:3001/api/slicer/status')
       .then((r) => r.json())
@@ -141,20 +133,6 @@ export default function VideoSlicerStudio({ onAddToast }) {
       if (eventSourceRef.current) eventSourceRef.current.close();
     };
   }, []);
-
-  const loadTraces = () => {
-    fetch('http://localhost:3001/api/dsh/traces')
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.code === 0 && res.data) {
-          setTraces(res.data);
-          if (res.data.length > 0 && !expandedTraceId) {
-            setExpandedTraceId(res.data[0].traceId);
-          }
-        }
-      })
-      .catch(() => {});
-  };
 
   const loadCases = () =>
     fetch('http://localhost:3001/api/slicer/cases')
@@ -201,7 +179,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
     setIsStreaming(false);
     setPipelineProgress(100);
     setPipelineStageBadge('Step 4: 规划完成');
-    setPipelineStatusText('全链路切片完成！已自动存入案例库');
+    setPipelineStatusText('全链路切片完成！已自动存入历史记录');
   };
 
   const handleOpenCase = async (id) => {
@@ -210,10 +188,10 @@ export default function VideoSlicerStudio({ onAddToast }) {
       if (res.code === 0) {
         applyAnalysisResult(res.data);
         setCasesOpen(false);
-        onAddToast && onAddToast(`已成功载入案例: ${res.data.video?.fileName || id}`);
+        onAddToast && onAddToast(`已成功载入历史记录: ${res.data.video?.fileName || id}`);
       }
     } catch (err) {
-      onAddToast && onAddToast(`载入案例失败: ${err.message}`);
+      onAddToast && onAddToast(`载入历史记录失败: ${err.message}`);
     }
   };
 
@@ -324,11 +302,10 @@ export default function VideoSlicerStudio({ onAddToast }) {
       setIsStreaming(false);
       setPipelineProgress(100);
       setPipelineStageBadge('Step 4: 规划完成');
-      setPipelineStatusText('全链路切片完成！已自动存入案例库');
+      setPipelineStatusText('全链路切片完成！已自动存入历史记录');
       clearInterval(timerIntervalRef.current);
       sse.close();
       eventSourceRef.current = null;
-      loadTraces();
       loadCases();
       onAddToast && onAddToast('切片流水线规划完成！卡片已全部解锁，可自由点击试看与下载。');
     });
@@ -366,9 +343,8 @@ export default function VideoSlicerStudio({ onAddToast }) {
         setIsStreaming(false);
         setPipelineProgress(100);
         setPipelineStageBadge('Step 4: 规划完成');
-        setPipelineStatusText('全链路切片完成！已自动存入案例库');
+        setPipelineStatusText('全链路切片完成！已自动存入历史记录');
         clearInterval(timerIntervalRef.current);
-        loadTraces();
         loadCases();
       }
     } catch (err) {
@@ -544,7 +520,6 @@ export default function VideoSlicerStudio({ onAddToast }) {
       });
       const json = await res.json();
       if (json.code === 0 && json.data) {
-        loadTraces();
 
         // 尝试通过浏览器原生协议辅助唤起
         try {
@@ -660,20 +635,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
 
         {/* 顶部右侧控制器 */}
         <div className="flex items-center gap-3">
-          {/* DSH Trace 抽屉按钮 */}
-          <button
-            onClick={() => {
-              setTracesOpen(!tracesOpen);
-              loadTraces();
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-2xs"
-            title="查看 DeepSeek Harness (DSH) 底层大模型调用 Trace 链"
-          >
-            <Terminal className="w-3.5 h-3.5 text-blue-600" />
-            <span>DSH Trace ({traces.length})</span>
-          </button>
-
-          {/* 案例库下拉 */}
+          {/* 历史记录下拉 */}
           <div className="relative">
             <button
               onClick={() => {
@@ -683,12 +645,13 @@ export default function VideoSlicerStudio({ onAddToast }) {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-2xs"
             >
               <FolderOpen className="w-3.5 h-3.5" />
-              <span>案例库 ({cases.length})</span>
+              <span>历史记录 ({cases.length})</span>
             </button>
             {casesOpen && (
               <div className="absolute right-0 top-full mt-2 w-[340px] max-h-[380px] overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-xl z-40 p-2">
+                <p className="px-3 py-2 text-xs text-neutral-500">视频保存在运行服务的本机，删除记录不会删除视频文件。</p>
                 {cases.length === 0 && (
-                  <div className="p-4 text-xs text-neutral-400 text-center">暂无案例，导入视频分析后会自动保存</div>
+                  <div className="p-4 text-xs text-neutral-400 text-center">暂无历史记录，导入视频分析后会自动保存</div>
                 )}
                 {cases.map((cs) => (
                   <div
@@ -710,7 +673,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
                         handleDeleteCase(cs.id);
                       }}
                       className="p-1 rounded text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="删除案例"
+                      title="删除历史记录"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -720,16 +683,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
             )}
           </div>
 
-          <a
-            href={serverStatus.webuiUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 transition-colors bg-white shadow-2xs"
-            title="在新标签页打开 MoneyPrinterTurbo 专属可视化剪辑工作台"
-          >
-            <span>工作台 WebUI</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+
 
           {/* 导入长视频文件上传 */}
           <input
@@ -743,6 +697,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
             className="hidden"
           />
 
+          <span className="text-xs text-neutral-500">视频保存在本机</span>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming}
@@ -752,25 +707,15 @@ export default function VideoSlicerStudio({ onAddToast }) {
             <span>导入长视频/回放</span>
           </button>
 
-          {/* 重新演示流式模拟处理 */}
-          <button
-            onClick={() => startStreamingJob(null)}
-            disabled={isStreaming}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-black text-white text-xs font-medium transition shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 ${isStreaming ? 'animate-spin' : ''}`} />
-            <span>{isStreaming ? '正在流式处理...' : '重新演示流式处理'}</span>
-          </button>
         </div>
       </header>
 
       {/* 主体工作台区域：上下专业布局 + 水平自适应伸缩 */}
       <main className="flex-1 flex flex-col p-3.5 lg:p-4 gap-3.5 max-w-[1920px] w-full mx-auto select-none">
-        {/* 上半部分：紧凑监看控制台 (左侧视窗 + 右侧时空热度时序中枢) */}
-        <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-3.5 shrink-0 flex flex-col lg:flex-row gap-5 items-stretch">
-          {/* 左侧：视频监视视窗 (宽屏大视窗 520px~620px，正下方配备独立时间戳与播放控制条) */}
-          <div className="w-full lg:w-[500px] xl:w-[560px] 2xl:w-[620px] shrink-0 flex flex-col gap-2">
-            <div className="relative w-full h-[250px] lg:h-[280px] xl:h-[310px] bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group shadow-inner">
+        {/* 视频监看与切片控制台 */}
+        <section className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-3.5 shrink-0 flex flex-col lg:flex-row gap-5">
+          <div className="w-full lg:w-[70%] min-w-0 flex flex-col gap-2">
+            <div className="relative w-full h-[40vh] min-h-[250px] max-h-[480px] bg-neutral-950 rounded-xl overflow-hidden flex flex-col items-center justify-center border border-neutral-800 text-white select-none group shadow-inner">
               <video
                 ref={videoRef}
                 src={videoData.videoUrl}
@@ -936,7 +881,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
             </div>
           </div>
 
-          {/* 右侧：流水线中枢与单品筛选控制台 (精简纯净) */}
+          {/* 视频信息与单品筛选控制台 */}
           <div className="flex-1 flex flex-col justify-between min-w-0 gap-3 py-1">
             {/* 顶栏：视频信息与阶段锁定状态 */}
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -982,7 +927,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
             </div>
 
             {/* 中部：商品筛选快速胶囊 (带色标与切片统计，宽度紧凑自适应，点击自动定位时间轴箭头) */}
-            <div className="w-fit max-w-xl p-2.5 px-3.5 rounded-xl bg-neutral-50/90 border border-neutral-200/70">
+            <div className="w-full p-2.5 px-3.5 rounded-xl bg-neutral-50/90 border border-neutral-200/70">
               <div className="flex items-center justify-between mb-2 text-xs gap-4">
                 <span className="font-semibold text-neutral-700 flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-neutral-500" />
@@ -1306,7 +1251,7 @@ export default function VideoSlicerStudio({ onAddToast }) {
                                         分值 {clip.score}
                                       </span>
 
-                                      <div className="flex items-center gap-1.5">
+                                      <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
                                         <button
                                           disabled={isPipelineLocked || exportingJianyingId === clip.id}
                                           onClick={(e) => {
@@ -1511,129 +1456,6 @@ export default function VideoSlicerStudio({ onAddToast }) {
         </section>
       </main>
 
-      {/* DSH 全局调用 Trace 追踪抽屉 */}
-      {tracesOpen && (
-        <div className="fixed inset-y-0 right-0 w-[520px] bg-white border-l border-neutral-200 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
-          <div className="h-14 border-b border-neutral-200 px-5 flex items-center justify-between bg-neutral-50/70 shrink-0">
-            <div className="flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-blue-600" />
-              <h3 className="text-sm font-semibold text-neutral-900">DeepSeek Harness · AI Trace 追踪</h3>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-mono">
-                {traces.length} 条记录
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={loadTraces}
-                className="px-2 py-1 rounded text-xs text-neutral-500 hover:text-neutral-800 hover:bg-neutral-200/60"
-              >
-                刷新
-              </button>
-              <button
-                onClick={() => setTracesOpen(false)}
-                className="p-1 rounded text-neutral-400 hover:text-neutral-800 hover:bg-neutral-200/60"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fafafa]">
-            {traces.length === 0 ? (
-              <div className="py-16 text-center text-xs text-neutral-400">
-                暂无 DSH Trace 记录，导入视频或执行分析后将实时记录每一笔 LLM 输入与输出。
-              </div>
-            ) : (
-              traces.map((tr) => {
-                const isExpanded = expandedTraceId === tr.traceId;
-                const sec = (tr.latencyMs / 1000).toFixed(2);
-                return (
-                  <div
-                    key={tr.traceId}
-                    className="border border-neutral-200 rounded-xl bg-white shadow-2xs overflow-hidden transition-all text-xs"
-                  >
-                    <div
-                      onClick={() => setExpandedTraceId(isExpanded ? null : tr.traceId)}
-                      className="p-3.5 flex items-start justify-between gap-3 cursor-pointer hover:bg-neutral-50/80"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`w-2 h-2 rounded-full ${tr.status === 'success' ? 'bg-emerald-500' : tr.status === 'retry' ? 'bg-amber-500' : 'bg-red-500'}`} />
-                          <span className="font-semibold text-neutral-900 font-mono">{tr.action}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-mono">
-                            {tr.model}
-                          </span>
-                        </div>
-                        <div className="text-[11px] font-mono text-neutral-400 truncate">
-                          {tr.traceId} · {new Date(tr.createdAt).toLocaleTimeString()}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-mono text-neutral-500 text-[11px]">{sec}s</span>
-                        {isExpanded ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
-                      </div>
-                    </div>
-
-                    {isExpanded && (
-                      <div className="border-t border-neutral-100 p-3.5 bg-neutral-50/50 space-y-3 font-mono text-[11px]">
-                        <div>
-                          <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-                            <span>Messages (Prompt)</span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(JSON.stringify(tr.messages, null, 2));
-                                onAddToast && onAddToast('已复制 Prompt');
-                              }}
-                              className="text-neutral-400 hover:text-neutral-700 flex items-center gap-1"
-                            >
-                              <Copy className="w-3 h-3" />
-                              <span>复制</span>
-                            </button>
-                          </div>
-                          <div className="max-h-48 overflow-y-auto p-2.5 rounded bg-neutral-900 text-neutral-200 whitespace-pre-wrap leading-relaxed text-[11px]">
-                            {tr.messages?.map((m, mi) => (
-                              <div key={mi} className="mb-2">
-                                <span className="text-blue-400 font-bold">[{m.role.toUpperCase()}]: </span>
-                                <span>{m.content}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-                            <span>Raw Model Output</span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(tr.rawOutput || '');
-                                onAddToast && onAddToast('已复制输出内容');
-                              }}
-                              className="text-neutral-400 hover:text-neutral-700 flex items-center gap-1"
-                            >
-                              <Copy className="w-3 h-3" />
-                              <span>复制</span>
-                            </button>
-                          </div>
-                          <div className="max-h-40 overflow-y-auto p-2.5 rounded bg-neutral-900 text-emerald-400 whitespace-pre-wrap leading-relaxed text-[11px]">
-                            {tr.rawOutput || '无原始文本'}
-                          </div>
-                        </div>
-
-                        {tr.error && (
-                          <div className="p-2 rounded bg-red-50 border border-red-200 text-red-700 text-[11px]">
-                            错误: {tr.error}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
