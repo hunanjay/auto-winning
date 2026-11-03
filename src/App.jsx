@@ -31,8 +31,50 @@ import {
   ClerkSidebarAvatarTrigger
 } from './components/ClerkAuthGateway';
 
+const TAB_ROUTES = {
+  chat: '/chat',
+  knowledge: '/knowledge',
+  image: '/image',
+  video: '/video',
+  slicer: '/slicer',
+  profile: '/profile',
+};
+
+const PATH_TO_TAB = Object.entries(TAB_ROUTES).reduce((acc, [tabId, path]) => {
+  acc[path] = tabId;
+  return acc;
+}, {});
+
+function getTabFromLocation() {
+  if (typeof window === 'undefined') return 'image';
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  return PATH_TO_TAB[pathname] || 'image';
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState('image');
+  const [activeTab, setActiveTabState] = useState(getTabFromLocation);
+
+  const setActiveTab = (nextTab) => {
+    const resolvedTab = TAB_ROUTES[nextTab] ? nextTab : 'image';
+    setActiveTabState(resolvedTab);
+    const targetPath = TAB_ROUTES[resolvedTab];
+    if (typeof window !== 'undefined' && window.location.pathname !== targetPath) {
+      window.history.pushState({ tab: resolvedTab }, '', targetPath);
+    }
+  };
+
+  useEffect(() => {
+    const currentTab = getTabFromLocation();
+    const targetPath = TAB_ROUTES[currentTab];
+    if (window.location.pathname !== targetPath) {
+      window.history.replaceState({ tab: currentTab }, '', targetPath);
+    }
+    const handlePopState = () => {
+      setActiveTabState(getTabFromLocation());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Custom Products (persisted in localStorage)
   const [customProducts, setCustomProducts] = useState(() => {
@@ -96,12 +138,20 @@ export default function App() {
   };
 
   const navItems = [
-    { id: 'chat', label: '会话', icon: MessageSquare },
-    { id: 'knowledge', label: '爆款库', icon: Compass },
-    { id: 'image', label: '图片模版库', icon: ImageIcon },
-    { id: 'video', label: '视频模版库', icon: Video },
-    { id: 'slicer', label: '智能切片', icon: Scissors }
+    { id: 'chat', label: '会话', icon: MessageSquare, path: TAB_ROUTES.chat },
+    { id: 'knowledge', label: '爆款库', icon: Compass, path: TAB_ROUTES.knowledge },
+    { id: 'image', label: '图片模版库', icon: ImageIcon, path: TAB_ROUTES.image },
+    { id: 'video', label: '视频模版库', icon: Video, path: TAB_ROUTES.video },
+    { id: 'slicer', label: '智能切片', icon: Scissors, path: TAB_ROUTES.slicer }
   ];
+
+  const currentTabLabel =
+    navItems.find((n) => n.id === activeTab)?.label || (activeTab === 'profile' ? '我的个人中心' : '');
+  const currentTabPath = TAB_ROUTES[activeTab] || '/image';
+
+  useEffect(() => {
+    document.title = currentTabLabel ? `auto-winning · ${currentTabLabel}` : 'auto-winning';
+  }, [currentTabLabel]);
 
   const handleAddProduct = (newProd) => {
     setCustomProducts((prev) => [newProd, ...prev]);
@@ -182,10 +232,16 @@ export default function App() {
       <aside className="w-[184px] shrink-0 bg-white border-r border-slate-200/80 flex flex-col justify-between p-3.5 z-30">
         <div className="flex flex-col gap-4">
           {/* Logo & Product Title */}
-          <div
-            onClick={() => setActiveTab('image')}
+          <a
+            href={TAB_ROUTES.image}
+            onClick={(e) => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab('image');
+              }
+            }}
             className="flex items-center gap-2.5 px-1 py-0.5 cursor-pointer group"
-            title="auto-winning"
+            title="auto-winning (/image)"
           >
             <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs group-hover:bg-indigo-600 transition-colors shrink-0">
               <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -198,7 +254,7 @@ export default function App() {
                 电商生成中心
               </div>
             </div>
-          </div>
+          </a>
 
           {/* Quick + New Template Button */}
           <button
@@ -216,9 +272,16 @@ export default function App() {
               const Icon = item.icon;
               const active = activeTab === item.id;
               return (
-                <button
+                <a
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  href={item.path}
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+                      e.preventDefault();
+                      setActiveTab(item.id);
+                    }
+                  }}
+                  title={`${item.label} (${item.path})`}
                   className={`w-full px-3 py-2.5 rounded-xl flex items-center gap-2.5 transition-all cursor-pointer ${
                     active
                       ? 'bg-slate-900 text-white shadow-xs font-bold'
@@ -227,7 +290,12 @@ export default function App() {
                 >
                   <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-indigo-400' : 'text-slate-500'}`} />
                   <span className="text-xs tracking-tight">{item.label}</span>
-                </button>
+                  {item.badge && (
+                    <span className="ml-auto px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-500 text-white font-mono tracking-wider">
+                      {item.badge}
+                    </span>
+                  )}
+                </a>
               );
             })}
           </nav>
@@ -249,15 +317,21 @@ export default function App() {
             </span>
           </button>
 
-          {/* 用户头像 Button 承接「我的」 */}
-          <button
-            onClick={() => setActiveTab('profile')}
+          {/* 用户头像 Link 承接「我的」 */}
+          <a
+            href={TAB_ROUTES.profile}
+            onClick={(e) => {
+              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+                e.preventDefault();
+                setActiveTab('profile');
+              }
+            }}
             className={`w-full px-2.5 py-2 rounded-xl flex items-center justify-between transition-all cursor-pointer ${
               activeTab === 'profile'
                 ? 'bg-slate-900 text-white shadow-xs'
                 : 'text-slate-700 hover:bg-slate-100'
             }`}
-            title="我的 · 个人中心与店铺商品库"
+            title={`我的 · 个人中心与店铺商品库 (${TAB_ROUTES.profile})`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div
@@ -278,7 +352,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-          </button>
+          </a>
         </div>
       </aside>
 
@@ -291,7 +365,10 @@ export default function App() {
             </span>
             <span className="text-slate-300">/</span>
             <span className="text-sm font-bold text-slate-700 tracking-tight">
-              {navItems.find((n) => n.id === activeTab)?.label || (activeTab === 'profile' ? '我的' : '')}
+              {currentTabLabel}
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-mono text-[11px] font-medium">
+              {currentTabPath}
             </span>
           </div>
 
@@ -424,6 +501,7 @@ export default function App() {
                 onAddToast={showToast}
               />
             )}
+
 
             {activeTab === 'profile' && (
               <PersonalCenter
